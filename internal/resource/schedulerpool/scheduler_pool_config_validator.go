@@ -21,10 +21,6 @@ func (v schedulerPoolResourceConfigValidator) MarkdownDescription(_ context.Cont
 
 func (v schedulerPoolResourceConfigValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var config SchedulerPoolModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
 
 	ytSchedulerPool, diags := toYTsaurusSchedulerPool(config)
 	resp.Diagnostics.Append(diags...)
@@ -38,7 +34,7 @@ func (v schedulerPoolResourceConfigValidator) ValidateResource(ctx context.Conte
 		resp.Diagnostics.AddError(
 			"Scheduler pool configuration error",
 			fmt.Sprintf(
-				"%q must be greater that or equal to %q, but %d < %d",
+				"%q must be greater than or equal to %q, but %d < %d",
 				"max_operation_count",
 				"max_running_operation_count",
 				*ytSchedulerPool.MaxOperationCount,

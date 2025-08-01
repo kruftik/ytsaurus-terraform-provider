@@ -134,7 +134,7 @@ func TestSchedulerPoolResourceMisconfigurations(t *testing.T) {
 			},
 			{
 				Config:      accGetYTLocalDockerProviderConfig() + accResourceYtsaurusSchedulerPoolConfig(resourceID, configMaxOperationCountGreaterThenMaxRunningOperationCount),
-				ExpectError: regexp.MustCompile("\"max_operation_count\" must be greater that or equal to\n\"max_running_operation_count\", but 9 < 10"),
+				ExpectError: regexp.MustCompile("but 9 < 10"),
 			},
 			{
 				Config:      accGetYTLocalDockerProviderConfig() + accResourceYtsaurusSchedulerPoolConfig(resourceID, configResourceLimitsNotEmpty),

@@ -24,6 +24,7 @@ description: |-
 - `account` (String) Account used to keep track of the resources being used by a specific node.
 - `acl` (Attributes List) A list of ACE records. More information: https://ytsaurus.tech/docs/en/user-guide/storage/access-control. (see [below for nested schema](#nestedatt--acl))
 - `inherit_acl` (Boolean) Enable or disable ACL inheritance from an object's parents.
+- `opaque` (Boolean) Defines the 'transparency' of an object. Opaque will not show the contents of the object for implicit get requests if set to True.. False by default.
 
 ### Read-Only
 

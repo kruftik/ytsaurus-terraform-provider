@@ -38,6 +38,7 @@ type MapNodeModel struct {
 	Account    types.String `tfsdk:"account"`
 	InheritACL types.Bool   `tfsdk:"inherit_acl"`
 	ACL        acl.ACLModel `tfsdk:"acl"`
+	Opaque     types.Bool   `tfsdk:"opaque"`
 }
 
 func toMapNodeModel(m ytsaurus.MapNode) MapNodeModel {
@@ -46,6 +47,7 @@ func toMapNodeModel(m ytsaurus.MapNode) MapNodeModel {
 		Path:       types.StringValue(m.Path),
 		Account:    types.StringValue(m.Account),
 		InheritACL: types.BoolValue(m.InheritACL),
+		Opaque:     types.BoolValue(m.Opaque),
 		ACL:        acl.ToACLModel(m.ACL),
 	}
 }
@@ -56,6 +58,7 @@ func toYTsaurusMapNode(m MapNodeModel) (ytsaurus.MapNode, diag.Diagnostics) {
 		Path:       m.Path.ValueString(),
 		Account:    m.Account.ValueString(),
 		InheritACL: m.InheritACL.ValueBool(),
+		Opaque:     m.Opaque.ValueBool(),
 		ACL:        acl,
 	}, diags
 }
@@ -104,6 +107,15 @@ func (r *mapNodeResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				},
 				Description: "A list of ACE records. More information: https://ytsaurus.tech/docs/en/user-guide/storage/access-control.",
 			},
+			"opaque": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+				Description: "Defines the 'transparency' of an object. Opaque will not show the contents of the object for implicit get requests if set to True.. False by default.",
+			},
 		},
 	}
 }
@@ -132,6 +144,7 @@ func (r *mapNodeResource) Create(ctx context.Context, req resource.CreateRequest
 		Attributes: map[string]interface{}{
 			"acl":                ytMapNode.ACL,
 			"inherit_acl":        ytMapNode.InheritACL,
+			"opaque":             ytMapNode.Opaque,
 			"terraform_resource": true,
 		},
 	}
@@ -236,6 +249,7 @@ func (r *mapNodeResource) Update(ctx context.Context, req resource.UpdateRequest
 		"account":     ytMapNode.Account,
 		"acl":         ytMapNode.ACL,
 		"inherit_acl": ytMapNode.InheritACL,
+		"opaque":      ytMapNode.Opaque,
 	}
 	for k, v := range attributeUpdates {
 		if err := r.client.SetNode(ctx, p.Attr(k), v, nil); err != nil {

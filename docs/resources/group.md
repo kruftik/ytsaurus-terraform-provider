@@ -29,6 +29,10 @@ https://ytsaurus.tech/docs/en/user-guide/storage/access-control#users_groups
 
 - `name` (String) YTsaurus group name.
 
+### Optional
+
+- `member_of` (Set of String) A set of groups that this object belongs to.
+
 ### Read-Only
 
 - `id` (String) ObjectID in the YTsaurus cluster, can be found in an object's @id attribute.

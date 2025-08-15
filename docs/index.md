@@ -16,28 +16,26 @@ description: |-
 terraform {
   required_providers {
     ytsaurus = {
-      source = "registry.terraform.io/ytsaurus/ytsaurus"
+      source = "terraform-provider.ytsaurus.tech/ytsaurus/ytsaurus"
     }
   }
 }
 
 # Add some size constants.
-variable "MBi" {
-  type    = number
-  default = 1024 * 1024
-}
-
-variable "GBi" {
-  type    = number
-  default = 1024 * 1024 * 1024
+locals {
+  MBi = 1024 * 1024
+  GBi = 1024 * 1024 * 1024
 }
 
 # There are two options for YTsaurus provider configuration:
 # cluster - YTsaurus cluster's fqdn
 # token - Admin's token
+# use_tls - Enable tls
 
 # For security reasons, do not store the token option in .tf file.
 # Instead, the 'token' should be stored in the $HOME/.yt/token file with the appropriate file permissions.
+
+# To enable tls between tf provider and yt cluster use 'use_tls' flag or add 'https://' to 'cluster' fqdn.
 
 provider "ytsaurus" {
   cluster = "<FQDN>"
@@ -70,28 +68,15 @@ resource "ytsaurus_user" "mrcat_denis" {
 # Now we can create an account with the storage resources allowed for our project and create a home directory.
 # But first, we should create some ACLs.
 
-variable "acl_mrcat_use" {
-  type = list(object({
-    action      = string
-    subjects    = list(string)
-    permissions = list(string)
-  }))
-  default = [
+locals {
+  acl_mrcat_use = [
     {
       action      = "allow"
       subjects    = ["mrcat"]
       permissions = ["use"]
     },
   ]
-}
-
-variable "acl_mrcat_full_access" {
-  type = list(object({
-    action      = string
-    subjects    = list(string)
-    permissions = list(string)
-  }))
-  default = [
+  acl_mrcat_full_access = [
     {
       action      = "allow"
       subjects    = ["mrcat"]
@@ -102,15 +87,15 @@ variable "acl_mrcat_full_access" {
 
 resource "ytsaurus_account" "mrcat_account" {
   name        = "mrcat"
-  acl = var.acl_mrcat_use
+  acl = local.acl_mrcat_use
   resource_limits = {
     node_count  = 1000
     chunk_count = 100000
     tablet_count = 10
-    tablet_static_memory = 10 * var.GBi
+    tablet_static_memory = 10 * local.GBi
     disk_space_per_medium = {
-      "default" = 100 * var.GBi
-      "ssd_journals" = 10 * var.GBi
+      "default" = 100 * local.GBi
+      "ssd_journals" = 10 * local.GBi
     }
   }
 }
@@ -120,7 +105,7 @@ resource "ytsaurus_account" "mrcat_account" {
 resource "ytsaurus_map_node" "mrcat_home" {
   path        = "//home/mrdir"
   account     = ytsaurus_account.mrcat_account.name
-  acl = var.acl_mrcat_full_access
+  acl = local.acl_mrcat_full_access
 
   lifecycle {
     prevent_destroy = true
@@ -135,12 +120,12 @@ resource "ytsaurus_map_node" "mrcat_home" {
 
 resource "ytsaurus_medium" "ssd_journals_medium" {
   name = "ssd_journals"
-  acl = var.acl_mrcat_use
+  acl = local.acl_mrcat_use
 }
 
 resource "ytsaurus_medium" "ssd_data_medium" {
   name = "ssd_data"
-  acl = var.acl_mrcat_use
+  acl = local.acl_mrcat_use
 }
 
 # To dedicate some of the cluster's resources to a specific user, a tablet cell bundle should be created.
@@ -167,15 +152,20 @@ resource "ytsaurus_scheduler_pool" "mrcat_main_pool" {
   pool_tree = "default"
   max_running_operation_count = 10
   max_operation_count = 10
+  acl = local.acl_mrcat_use
 
   strong_guarantee_resources = {
     cpu = 10
-    memory = 16 * var.GBi
+    memory = 16 * local.GBi
   }
   resource_limits = {
     cpu = 50
-    memory = 32 * var.GBi
+    memory = 32 * local.GBi
   }
+
+  # In some cases you need to explicitly define terraform executing plan and resources arrangement.
+  # Terraform provides 'depends_on' attribute for this purpose.
+  depends_on = [ytsaurus_group.mrcat_main_group]
 }
 ```
 
@@ -188,5 +178,6 @@ resource "ytsaurus_scheduler_pool" "mrcat_main_pool" {
 
 ### Optional
 
+- `ca_certificate` (String) CA certificates in PEM format
 - `token` (String) Admin's token. Use YT_TOKEN_PATH environment variable instead.
 - `use_tls` (Boolean) Enable TLS for cluster's connection

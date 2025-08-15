@@ -5,8 +5,9 @@ import (
 )
 
 type Group struct {
-	ID   string `yson:"id"`
-	Name string `yson:"name"`
+	ID       string    `yson:"id"`
+	Name     string    `yson:"name"`
+	MemberOf *[]string `yson:"member_of"`
 }
 
 type User struct {
@@ -55,6 +56,7 @@ type MapNode struct {
 	Account    string   `yson:"account"`
 	InheritACL bool     `yson:"inherit_acl"`
 	ACL        []yt.ACE `yson:"acl"`
+	Opaque     bool     `yson:"opaque"`
 }
 
 type TabletCellBundleOptions struct {

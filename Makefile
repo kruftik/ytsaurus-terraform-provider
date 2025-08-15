@@ -5,8 +5,10 @@ TF_LOG ?= INFO
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+run: install
+
 .PHONY: all
-all: build
+all: test docs install
 
 ##@ General
 

@@ -4,14 +4,21 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"go.ytsaurus.tech/yt/go/ypath"
 	"go.ytsaurus.tech/yt/go/yt"
 
+	"terraform-provider-ytsaurus/internal/set"
 	"terraform-provider-ytsaurus/internal/ytsaurus"
 )
 
@@ -20,21 +27,39 @@ type groupResource struct {
 }
 
 type GroupModel struct {
-	ID   types.String `tfsdk:"id"`
-	Name types.String `tfsdk:"name"`
+	ID       types.String `tfsdk:"id"`
+	Name     types.String `tfsdk:"name"`
+	MemberOf types.Set    `tfsdk:"member_of"`
+}
+
+func toYTsaurusGroup(ctx context.Context, g GroupModel) (ytsaurus.Group, diag.Diagnostics) {
+	var memberOf []string
+	diags := g.MemberOf.ElementsAs(ctx, &memberOf, false)
+
+	ytGroup := ytsaurus.Group{
+		Name:     g.Name.ValueString(),
+		MemberOf: &memberOf,
+	}
+
+	return ytGroup, diags
 }
 
 func toGroupModel(g ytsaurus.Group) GroupModel {
-	return GroupModel{
+	group := GroupModel{
 		ID:   types.StringValue(g.ID),
 		Name: types.StringValue(g.Name),
 	}
-}
 
-func toYTsaurusGroup(g GroupModel) ytsaurus.Group {
-	return ytsaurus.Group{
-		Name: g.Name.ValueString(),
+	if g.MemberOf != nil && len(*g.MemberOf) > 0 {
+		var memberOf []attr.Value
+		for _, m := range *g.MemberOf {
+			memberOf = append(memberOf, types.StringValue(m))
+		}
+		group.MemberOf = types.SetValueMust(types.StringType, memberOf)
+	} else {
+		group.MemberOf = types.SetNull(types.StringType)
 	}
+	return group
 }
 
 var (
@@ -79,6 +104,17 @@ https://ytsaurus.tech/docs/en/user-guide/storage/access-control#users_groups
 				Required:    true,
 				Description: "YTsaurus group name.",
 			},
+			"member_of": schema.SetAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.Set{
+					setvalidator.SizeAtLeast(1),
+				},
+				Description: "A set of groups that this object belongs to.",
+			},
 		},
 	}
 }
@@ -90,7 +126,12 @@ func (r *groupResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	ytGroup := toYTsaurusGroup(plan)
+	ytGroup, diags := toYTsaurusGroup(ctx, plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	createOptions := &yt.CreateObjectOptions{
 		Attributes: map[string]interface{}{
 			"name":               ytGroup.Name,
@@ -110,6 +151,20 @@ func (r *groupResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	for _, groupName := range *ytGroup.MemberOf {
+		if err := r.client.AddMember(ctx, groupName, ytGroup.Name, nil); err != nil {
+			resp.Diagnostics.AddError(
+				"Error adding user to group",
+				fmt.Sprintf(
+					"Could not add user %q to the group %q, unexpected error: %q",
+					ytGroup.Name,
+					groupName,
+					err.Error(),
+				),
+			)
+		}
+	}
+
 	plan.ID = types.StringValue(id.String())
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
@@ -121,8 +176,8 @@ func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	var group ytsaurus.Group
-	if err := ytsaurus.GetObjectByID(ctx, r.client, objectID, &group); err != nil {
+	var ytGroup ytsaurus.Group
+	if err := ytsaurus.GetObjectByID(ctx, r.client, objectID, &ytGroup); err != nil {
 		resp.Diagnostics.AddError(
 			"Error reading group",
 			fmt.Sprintf(
@@ -134,7 +189,20 @@ func (r *groupResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	state := toGroupModel(group)
+	if ytGroup.MemberOf != nil {
+		var memberOfWithoutBuiltin []string
+		for _, u := range *ytGroup.MemberOf {
+			switch u {
+			case "users":
+				continue
+			default:
+				memberOfWithoutBuiltin = append(memberOfWithoutBuiltin, u)
+			}
+		}
+		ytGroup.MemberOf = &memberOfWithoutBuiltin
+	}
+
+	state := toGroupModel(ytGroup)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -145,13 +213,36 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
+	ytUserPlan, diags := toYTsaurusGroup(ctx, plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	var state GroupModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ytUserState, diags := toYTsaurusGroup(ctx, state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	var objectID string
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &objectID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	ytGroup := toYTsaurusGroup(plan)
+	ytGroup, diags := toYTsaurusGroup(ctx, plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	p := ypath.Path(fmt.Sprintf("#%s", objectID)).Attr("name")
 	if err := r.client.SetNode(ctx, p, ytGroup.Name, nil); err != nil {
 		resp.Diagnostics.AddError(
@@ -166,6 +257,41 @@ func (r *groupResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
+	stateMemberOfSet := set.ToStringSet(*ytUserState.MemberOf)
+	planMemberOfSet := set.ToStringSet(*ytUserPlan.MemberOf)
+
+	removeMemberFromGroups := stateMemberOfSet.Difference(planMemberOfSet)
+	for _, groupName := range removeMemberFromGroups {
+		if err := r.client.RemoveMember(ctx, groupName, plan.Name.ValueString(), nil); err != nil {
+			resp.Diagnostics.AddError(
+				"Error removing user from group",
+				fmt.Sprintf(
+					"Could not remove %q user from %q group, unexpected error: %q",
+					plan.Name.ValueString(),
+					groupName,
+					err.Error(),
+				),
+			)
+			return
+		}
+	}
+
+	addMemberToGroups := planMemberOfSet.Difference(stateMemberOfSet)
+	for _, groupName := range addMemberToGroups {
+		if err := r.client.AddMember(ctx, groupName, plan.Name.ValueString(), nil); err != nil {
+			resp.Diagnostics.AddError(
+				"Error removing user from group",
+				fmt.Sprintf(
+					"Could not add %q user to %q group, unexpected error: %q",
+					plan.Name.ValueString(),
+					groupName,
+					err.Error(),
+				),
+			)
+			return
+		}
+	}
+
 	plan.ID = types.StringValue(objectID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
@@ -177,7 +303,12 @@ func (r *groupResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	ytGroup := toYTsaurusGroup(state)
+	ytGroup, diags := toYTsaurusGroup(ctx, state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	p := ypath.Path(fmt.Sprintf("//sys/groups/%s", ytGroup.Name))
 	if err := r.client.RemoveNode(ctx, p, nil); err != nil {
 		resp.Diagnostics.AddError(

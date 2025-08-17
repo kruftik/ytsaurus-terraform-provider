@@ -59,6 +59,12 @@ type MapNode struct {
 	Opaque     bool     `yson:"opaque"`
 }
 
+type Link struct {
+	ID         string `yson:"id"`
+	Path       string `yson:"path"`
+	TargetPath string `yson:"target_path"`
+}
+
 type TabletCellBundleOptions struct {
 	ChangelogAccount           string `yson:"changelog_account"`
 	ChangelogWriteQuorum       int64  `yson:"changelog_write_quorum"`

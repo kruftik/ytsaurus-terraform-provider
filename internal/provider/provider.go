@@ -17,6 +17,7 @@ import (
 
 	"terraform-provider-ytsaurus/internal/resource/account"
 	"terraform-provider-ytsaurus/internal/resource/group"
+	"terraform-provider-ytsaurus/internal/resource/link"
 	"terraform-provider-ytsaurus/internal/resource/mapnode"
 	"terraform-provider-ytsaurus/internal/resource/medium"
 	"terraform-provider-ytsaurus/internal/resource/schedulerpool"
@@ -136,5 +137,6 @@ func (p *ytsaurusProvider) Resources(_ context.Context) []func() resource.Resour
 		mapnode.NewGroupResource,
 		tabletcellbundle.NewTabletCellBundleResource,
 		schedulerpool.NewSchedulerPoolResource,
+		link.NewLinkResource,
 	}
 }

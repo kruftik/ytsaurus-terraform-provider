@@ -47,19 +47,23 @@ func accCheckYTsaurusObjectDestroyed(sp string) resource.TestCheckFunc {
 	}
 }
 
-// func accCheckYTsaurusObjectExists(objectCypressPath string) (bool, error) {
-// 	p := ypath.Path(objectCypressPath)
-// 	return testYTClient.NodeExists(ctx, p, nil)
-// }
+func checkYTsaurusObjectExists(objectCypressPath string) error {
+	p := ypath.Path(objectCypressPath)
+	ok, err := testYTClient.NodeExists(ctx, p, nil)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("object %q does not exist", p.String())
+	}
+	return nil
+}
 
-// func accGetYTsaurusStringAttribute(objectCypressPath, attributeName string) string {
-// 	var result string
-// 	p := ypath.Path(objectCypressPath).Attr(attributeName)
-// 	if err := testYTClient.GetNode(ctx, p, &result, nil); err != nil {
-// 		panic(err.Error())
-// 	}
-// 	return result
-// }
+func accCheckYTsaurusObjectExists(objectCypressPath string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		return checkYTsaurusObjectExists(objectCypressPath)
+	}
+}
 
 func accCompareYTsaurusAttribute(objectCypressPath, attributeName string, value, result interface{}) error {
 	p := ypath.Path(objectCypressPath).Attr(attributeName)

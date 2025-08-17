@@ -63,7 +63,7 @@ func toYTsaurusMapNode(m MapNodeModel) (ytsaurus.MapNode, diag.Diagnostics) {
 	}, diags
 }
 
-func NewGroupResource() resource.Resource {
+func NewMapNodeResource() resource.Resource {
 	return &mapNodeResource{}
 }
 

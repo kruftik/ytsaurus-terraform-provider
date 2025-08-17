@@ -134,7 +134,7 @@ func (p *ytsaurusProvider) Resources(_ context.Context) []func() resource.Resour
 		user.NewUserResource,
 		account.NewAccountResource,
 		medium.NewMediumResource,
-		mapnode.NewGroupResource,
+		mapnode.NewMapNodeResource,
 		tabletcellbundle.NewTabletCellBundleResource,
 		schedulerpool.NewSchedulerPoolResource,
 		link.NewLinkResource,

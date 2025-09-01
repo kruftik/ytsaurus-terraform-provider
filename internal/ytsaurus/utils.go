@@ -8,9 +8,9 @@ import (
 	"go.ytsaurus.tech/yt/go/yt"
 )
 
-func GetObjectByID(ctx context.Context, client yt.Client, id string, resp interface{}) error {
+func GetObjectByID(ctx context.Context, client yt.Client, id string, result any) error {
 	p := ypath.Path(fmt.Sprintf("#%s/@", id))
-	return client.GetNode(ctx, p, resp, nil)
+	return client.GetNode(ctx, p, result, nil)
 }
 
 func RemoveIfExists(ctx context.Context, client yt.Client, p ypath.Path) error {

@@ -65,6 +65,11 @@ type Link struct {
 	TargetPath string `yson:"target_path"`
 }
 
+type ObjectSchema struct {
+	ID  string   `yson:"id"`
+	ACL []yt.ACE `yson:"acl"`
+}
+
 type TabletCellBundleOptions struct {
 	ChangelogAccount           string `yson:"changelog_account"`
 	ChangelogWriteQuorum       int64  `yson:"changelog_write_quorum"`

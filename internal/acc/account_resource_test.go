@@ -1,11 +1,13 @@
 package acc
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -16,6 +18,7 @@ import (
 )
 
 func TestAccountResourceCreateAndUpdate(t *testing.T) {
+	ctx := context.TODO()
 
 	resourceID := "testaccount"
 	testAccountName := resourceID
@@ -48,46 +51,88 @@ func TestAccountResourceCreateAndUpdate(t *testing.T) {
 	}
 
 	configWithEmptyResourceLimits := account.AccountModel{
-		Name:           types.StringValue(testAccountName),
-		ResourceLimits: &account.AccountResourceLimitsModel{},
+		Name: types.StringValue(testAccountName),
+		ResourceLimits: types.ObjectValueMust(map[string]attr.Type{},
+			map[string]attr.Value{},
+		),
 	}
 
 	configCreate := account.AccountModel{
 		Name: types.StringValue(testAccountName),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount),
-			NodeCount:  types.Int64Value(testNodeCount),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+		ResourceLimits: types.ObjectValueMust(
+			map[string]attr.Type{
+				"node_count":            types.Int64Type,
+				"chunk_count":           types.Int64Type,
+				"tablet_count":          types.Int64Type,
+				"tablet_static_memory":  types.Int64Type,
+				"disk_space_per_medium": types.MapType{ElemType: types.Int64Type},
 			},
-		},
+			map[string]attr.Value{
+				"node_count":           types.Int64Value(testNodeCount),
+				"chunk_count":          types.Int64Value(testChunkCount),
+				"tablet_count":         types.Int64Null(),
+				"tablet_static_memory": types.Int64Null(),
+				"disk_space_per_medium": types.MapValueMust(
+					types.Int64Type,
+					map[string]attr.Value{
+						testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+					},
+				),
+			},
+		),
 	}
 
 	configRename := account.AccountModel{
 		Name: types.StringValue(testAccountNameRenamed),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount),
-			NodeCount:  types.Int64Value(testNodeCount),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+		ResourceLimits: types.ObjectValueMust(
+			map[string]attr.Type{
+				"node_count":            types.Int64Type,
+				"chunk_count":           types.Int64Type,
+				"tablet_count":          types.Int64Type,
+				"tablet_static_memory":  types.Int64Type,
+				"disk_space_per_medium": types.MapType{ElemType: types.Int64Type},
 			},
-		},
+			map[string]attr.Value{
+				"node_count":           types.Int64Value(testNodeCount),
+				"chunk_count":          types.Int64Value(testChunkCount),
+				"tablet_count":         types.Int64Null(),
+				"tablet_static_memory": types.Int64Null(),
+				"disk_space_per_medium": types.MapValueMust(
+					types.Int64Type,
+					map[string]attr.Value{
+						testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+					},
+				),
+			},
+		),
 	}
 
 	configUpdate := account.AccountModel{
 		Name:       types.StringValue(testAccountName),
 		InheritACL: types.BoolValue(testInheritAcl),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount + 1),
-			NodeCount:  types.Int64Value(testNodeCount + 1),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize + 1),
+		ResourceLimits: types.ObjectValueMust(
+			map[string]attr.Type{
+				"node_count":            types.Int64Type,
+				"chunk_count":           types.Int64Type,
+				"tablet_count":          types.Int64Type,
+				"tablet_static_memory":  types.Int64Type,
+				"disk_space_per_medium": types.MapType{ElemType: types.Int64Type},
 			},
-			TabletCount:        types.Int64Value(testTabletCount),
-			TabletStaticMemory: types.Int64Value(testTabletStaticMemory),
-		},
-		ACL: acl.ToACLModel(testACL),
+			map[string]attr.Value{
+				"node_count":           types.Int64Value(testNodeCount + 1),
+				"chunk_count":          types.Int64Value(testChunkCount + 1),
+				"tablet_count":         types.Int64Value(testTabletCount),
+				"tablet_static_memory": types.Int64Value(testTabletStaticMemory),
+				"disk_space_per_medium": types.MapValueMust(
+					types.Int64Type,
+					map[string]attr.Value{
+						testDefaultMedium: types.Int64Value(testDefaultMediumSize + 1),
+					},
+				),
+			},
+		),
 	}
+	configUpdate.ACL, _ = acl.FlattenACL(ctx, testACL)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
@@ -163,18 +208,39 @@ func TestAccountResourceCreateWithAllOptions(t *testing.T) {
 
 	configCreate := account.AccountModel{
 		Name: types.StringValue(testAccountName),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount),
-			NodeCount:  types.Int64Value(testNodeCount),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+		ResourceLimits: types.ObjectValueMust(
+			map[string]attr.Type{
+				"node_count":            types.Int64Type,
+				"chunk_count":           types.Int64Type,
+				"tablet_count":          types.Int64Type,
+				"tablet_static_memory":  types.Int64Type,
+				"disk_space_per_medium": types.MapType{ElemType: types.Int64Type},
 			},
-			TabletCount:        types.Int64Value(testTabletCount),
-			TabletStaticMemory: types.Int64Value(testTabletStaticMemory),
-		},
-		ACL:        acl.ToACLModel(testACL),
+			map[string]attr.Value{
+				"node_count":           types.Int64Value(testNodeCount),
+				"chunk_count":          types.Int64Value(testChunkCount),
+				"tablet_count":         types.Int64Value(testTabletCount),
+				"tablet_static_memory": types.Int64Value(testTabletStaticMemory),
+				"disk_space_per_medium": types.MapValueMust(
+					types.Int64Type,
+					map[string]attr.Value{
+						testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+					},
+				),
+			},
+		),
 		InheritACL: types.BoolValue(testInheritAcl),
 	}
+	configCreate.ACL, _ = types.ListValueFrom(
+		ctx,
+		types.ObjectType{AttrTypes: map[string]attr.Type{
+			"action":           types.StringType,
+			"subjects":         types.SetType{ElemType: types.StringType},
+			"permissions":      types.SetType{ElemType: types.StringType},
+			"inheritance_mode": types.StringType,
+		}},
+		acl.ToACLModel(testACL),
+	)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: ProtoV6ProviderFactories,
@@ -212,39 +278,42 @@ func TestAccountResourceCreateParentChild(t *testing.T) {
 	testChunkCount := int64(1000)
 	testDefaultMedium := "default"
 	testDefaultMediumSize := int64(1000000)
+	testResourceLimits := types.ObjectValueMust(
+		map[string]attr.Type{
+			"node_count":            types.Int64Type,
+			"chunk_count":           types.Int64Type,
+			"tablet_count":          types.Int64Type,
+			"tablet_static_memory":  types.Int64Type,
+			"disk_space_per_medium": types.MapType{ElemType: types.Int64Type},
+		},
+		map[string]attr.Value{
+			"node_count":           types.Int64Value(testNodeCount),
+			"chunk_count":          types.Int64Value(testChunkCount),
+			"tablet_count":         types.Int64Null(),
+			"tablet_static_memory": types.Int64Null(),
+			"disk_space_per_medium": types.MapValueMust(
+				types.Int64Type,
+				map[string]attr.Value{
+					testDefaultMedium: types.Int64Value(testDefaultMediumSize),
+				},
+			),
+		},
+	)
 
 	configParent := account.AccountModel{
-		Name: types.StringValue(testAccountParentName),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount),
-			NodeCount:  types.Int64Value(testNodeCount),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize),
-			},
-		},
+		Name:           types.StringValue(testAccountParentName),
+		ResourceLimits: testResourceLimits,
 	}
 
 	configChild := account.AccountModel{
-		Name:       types.StringValue(testAccountChildName),
-		ParentName: types.StringValue(fmt.Sprintf("ytsaurus_account.%s.name", resourceParentID)),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount),
-			NodeCount:  types.Int64Value(testNodeCount),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize),
-			},
-		},
+		Name:           types.StringValue(testAccountChildName),
+		ParentName:     types.StringValue(fmt.Sprintf("ytsaurus_account.%s.name", resourceParentID)),
+		ResourceLimits: testResourceLimits,
 	}
 
 	configRemoveParentName := account.AccountModel{
-		Name: types.StringValue(testAccountChildName),
-		ResourceLimits: &account.AccountResourceLimitsModel{
-			ChunkCount: types.Int64Value(testChunkCount),
-			NodeCount:  types.Int64Value(testNodeCount),
-			DiskSpacePerMedium: map[string]basetypes.Int64Value{
-				testDefaultMedium: types.Int64Value(testDefaultMediumSize),
-			},
-		},
+		Name:           types.StringValue(testAccountChildName),
+		ResourceLimits: testResourceLimits,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -291,37 +360,41 @@ func accResourceYtsaurusAccountConfig(id string, m account.AccountModel) string 
 		inherit_acl = %t`, m.InheritACL.ValueBool())
 	}
 
-	if m.ResourceLimits != nil {
+	if !m.ResourceLimits.IsNull() {
+		var resourceLimitsModel account.AccountResourceLimitsModel
+		m.ResourceLimits.As(ctx, &resourceLimitsModel, basetypes.ObjectAsOptions{})
+
 		config += `
 		resource_limits = {`
 
-		if !m.ResourceLimits.NodeCount.IsNull() {
+		if !resourceLimitsModel.NodeCount.IsNull() {
 			config += fmt.Sprintf(`
-			node_count = %d`, m.ResourceLimits.NodeCount.ValueInt64())
+			node_count = %d`, resourceLimitsModel.NodeCount.ValueInt64())
 		}
 
-		if !m.ResourceLimits.ChunkCount.IsNull() {
+		if !resourceLimitsModel.ChunkCount.IsNull() {
 			config += fmt.Sprintf(`
-			chunk_count = %d`, m.ResourceLimits.ChunkCount.ValueInt64())
+			chunk_count = %d`, resourceLimitsModel.ChunkCount.ValueInt64())
 		}
 
-		if !m.ResourceLimits.TabletCount.IsNull() {
+		if !resourceLimitsModel.TabletCount.IsNull() {
 			config += fmt.Sprintf(`
-			tablet_count = %d`, m.ResourceLimits.TabletCount.ValueInt64())
+			tablet_count = %d`, resourceLimitsModel.TabletCount.ValueInt64())
 		}
 
-		if !m.ResourceLimits.TabletStaticMemory.IsNull() {
+		if !resourceLimitsModel.TabletStaticMemory.IsNull() {
 			config += fmt.Sprintf(`
-			tablet_static_memory = %d`, m.ResourceLimits.TabletStaticMemory.ValueInt64())
+			tablet_static_memory = %d`, resourceLimitsModel.TabletStaticMemory.ValueInt64())
 		}
 
-		if len(m.ResourceLimits.DiskSpacePerMedium) > 0 {
+		if len(resourceLimitsModel.DiskSpacePerMedium.Elements()) > 0 {
 			config += `
 			disk_space_per_medium = {`
 
-			for k, v := range m.ResourceLimits.DiskSpacePerMedium {
+			for k, v := range resourceLimitsModel.DiskSpacePerMedium.Elements() {
+
 				config += fmt.Sprintf(`
-				%q = %d`, k, v.ValueInt64())
+				%q = %d`, k, v.(types.Int64).ValueInt64())
 			}
 
 			config += `
@@ -332,7 +405,8 @@ func accResourceYtsaurusAccountConfig(id string, m account.AccountModel) string 
 		}`
 	}
 
-	acl, _ := acl.ToYTsaurusACL(m.ACL)
+	ctx := context.TODO()
+	acl, _ := acl.ExpandACL(ctx, m.ACL)
 	config += accAddACLConfig(acl)
 
 	config += `

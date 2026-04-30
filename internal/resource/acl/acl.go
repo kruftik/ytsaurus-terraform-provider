@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -72,7 +73,113 @@ func toACEModel(ytACE yt.ACE) (ACEModel, diag.Diagnostics) {
 	return ace, diags
 }
 
+// flattenACE performs YT to Terraform conversion for ACE (Access Control Entry).
+// Direction: YT -> Terraform
+func flattenACE(ace yt.ACE) (ACEModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	subjects := make([]string, 0, len(ace.Subjects))
+	for _, s := range ace.Subjects {
+		subjects = append(subjects, string(s))
+	}
+	subjectsSet, diags := types.SetValueFrom(context.TODO(), types.StringType, ace.Subjects)
+	if diags.HasError() {
+		return ACEModel{}, diags
+	}
+
+	permissions := make([]string, 0, len(ace.Permissions))
+	for _, p := range ace.Permissions {
+		permissions = append(permissions, string(p))
+	}
+	permissionsSet, diags := types.SetValueFrom(context.TODO(), types.StringType, permissions)
+	if diags.HasError() {
+		return ACEModel{}, diags
+	}
+
+	aceModel := ACEModel{
+		Action:          types.StringValue(string(ace.Action)),
+		InheritanceMode: types.StringValue(ace.InheritanceMode),
+		Subjects:        subjectsSet,
+		Permissions:     permissionsSet,
+	}
+
+	return aceModel, diags
+}
+
 type ACLModel []ACEModel
+
+// FlattenACL performs YT to Terraform conversion for ACL resources.
+// Direction: YT -> Terraform
+func FlattenACL(ctx context.Context, acl []yt.ACE) (types.List, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	attrTypes := map[string]attr.Type{
+		"action":           types.StringType,
+		"subjects":         types.SetType{ElemType: types.StringType},
+		"permissions":      types.SetType{ElemType: types.StringType},
+		"inheritance_mode": types.StringType,
+	}
+
+	var aclModel []ACEModel
+	for _, ace := range acl {
+		aceModel, diags := flattenACE(ace)
+		if diags.HasError() {
+			return types.ListNull(types.ObjectType{AttrTypes: attrTypes}), diags
+		}
+		aclModel = append(aclModel, aceModel)
+	}
+
+	aclList, diags := types.ListValueFrom(ctx, types.ObjectType{AttrTypes: attrTypes}, aclModel)
+	return aclList, diags
+}
+
+// ExpandACL performs Terraform to YT conversion for ACL.
+// Direction: Terraform -> YT
+func ExpandACL(ctx context.Context, aclList types.List) ([]yt.ACE, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if aclList.IsNull() {
+		return nil, diags
+	}
+
+	if len(aclList.Elements()) == 0 {
+		return []yt.ACE{}, diags
+	}
+
+	var aclModel ACLModel
+	diags = aclList.ElementsAs(ctx, &aclModel, false)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	acl := make([]yt.ACE, 0, len(aclModel))
+	for _, aceModel := range aclModel {
+
+		subjects := []string{}
+		if !aceModel.Subjects.IsNull() {
+			subjects = make([]string, 0, len(aceModel.Subjects.Elements()))
+			if diags := aceModel.Subjects.ElementsAs(ctx, &subjects, false); diags.HasError() {
+				return nil, diags
+			}
+		}
+
+		permissions := []string{}
+		if !aceModel.Permissions.IsNull() {
+			permissions = make([]string, 0, len(aceModel.Permissions.Elements()))
+			if diags := aceModel.Permissions.ElementsAs(ctx, &permissions, false); diags.HasError() {
+				return nil, diags
+			}
+		}
+
+		acl = append(acl, yt.ACE{
+			Action:          yt.SecurityAction(aceModel.Action.ValueString()),
+			Subjects:        subjects,
+			Permissions:     permissions,
+			InheritanceMode: aceModel.InheritanceMode.ValueString(),
+		})
+	}
+
+	return acl, diags
+}
 
 func ToYTsaurusACL(acl ACLModel) ([]yt.ACE, diag.Diagnostics) {
 	var ytACL []yt.ACE

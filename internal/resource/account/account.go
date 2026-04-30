@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -18,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
 	"go.ytsaurus.tech/yt/go/ypath"
 	"go.ytsaurus.tech/yt/go/yt"
@@ -36,76 +38,144 @@ type accountResource struct {
 }
 
 type AccountResourceLimitsModel struct {
-	NodeCount          types.Int64            `tfsdk:"node_count"`
-	ChunkCount         types.Int64            `tfsdk:"chunk_count"`
-	TabletCount        types.Int64            `tfsdk:"tablet_count"`
-	TabletStaticMemory types.Int64            `tfsdk:"tablet_static_memory"`
-	DiskSpacePerMedium map[string]types.Int64 `tfsdk:"disk_space_per_medium"`
-}
-
-func toResourceLimitsModel(r ytsaurus.AccountResourceLimits) *AccountResourceLimitsModel {
-	resourceLimit := AccountResourceLimitsModel{
-		NodeCount:          types.Int64Value(r.NodeCount),
-		ChunkCount:         types.Int64Value(r.ChunkCount),
-		TabletCount:        types.Int64Value(r.TabletCount),
-		TabletStaticMemory: types.Int64Value(r.TabletStaticMemory),
-		DiskSpacePerMedium: make(map[string]types.Int64),
-	}
-	for k, v := range r.DiskSpacePerMedium {
-		resourceLimit.DiskSpacePerMedium[k] = types.Int64Value(v)
-	}
-	return &resourceLimit
-}
-
-func toYTsaurusAccountResourceLimits(r AccountResourceLimitsModel) ytsaurus.AccountResourceLimits {
-	resourceLimits := ytsaurus.AccountResourceLimits{
-		NodeCount:          r.NodeCount.ValueInt64(),
-		ChunkCount:         r.ChunkCount.ValueInt64(),
-		TabletCount:        r.TabletCount.ValueInt64(),
-		TabletStaticMemory: r.TabletStaticMemory.ValueInt64(),
-		DiskSpacePerMedium: make(map[string]int64),
-	}
-	for k, v := range r.DiskSpacePerMedium {
-		resourceLimits.DiskSpacePerMedium[k] = v.ValueInt64()
-	}
-	return resourceLimits
+	NodeCount          types.Int64 `tfsdk:"node_count"`
+	ChunkCount         types.Int64 `tfsdk:"chunk_count"`
+	TabletCount        types.Int64 `tfsdk:"tablet_count"`
+	TabletStaticMemory types.Int64 `tfsdk:"tablet_static_memory"`
+	DiskSpacePerMedium types.Map   `tfsdk:"disk_space_per_medium"`
 }
 
 type AccountModel struct {
-	ID             types.String                `tfsdk:"id"`
-	Name           types.String                `tfsdk:"name"`
-	ACL            acl.ACLModel                `tfsdk:"acl"`
-	ParentName     types.String                `tfsdk:"parent_name"`
-	ResourceLimits *AccountResourceLimitsModel `tfsdk:"resource_limits"`
-	InheritACL     types.Bool                  `tfsdk:"inherit_acl"`
+	ID             types.String `tfsdk:"id"`
+	Name           types.String `tfsdk:"name"`
+	ACL            types.List   `tfsdk:"acl"`
+	ParentName     types.String `tfsdk:"parent_name"`
+	ResourceLimits types.Object `tfsdk:"resource_limits"`
+	InheritACL     types.Bool   `tfsdk:"inherit_acl"`
 }
 
-func toAccountModel(a ytsaurus.Account) AccountModel {
-	account := AccountModel{
-		ID:             types.StringValue(a.ID),
-		Name:           types.StringValue(a.Name),
-		ACL:            acl.ToACLModel(a.ACL),
-		ResourceLimits: toResourceLimitsModel(a.ResourceLimits),
-		InheritACL:     types.BoolValue(a.InheritACL),
+// flattenAccountResourceLimits performs YT to Terraform conversion for AccountResourceLimits.
+// Direction: YT -> Terraform
+func flattenAccountResourceLimits(ctx context.Context, limits ytsaurus.AccountResourceLimits) (types.Object, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	attrTypes := map[string]attr.Type{
+		"node_count":            types.Int64Type,
+		"chunk_count":           types.Int64Type,
+		"tablet_count":          types.Int64Type,
+		"tablet_static_memory":  types.Int64Type,
+		"disk_space_per_medium": types.MapType{ElemType: types.Int64Type},
 	}
 
-	if a.ParentName == "root" {
-		account.ParentName = types.StringNull()
+	var diskSpacePerMedium types.Map
+	if len(limits.DiskSpacePerMedium) == 0 {
+		diskSpacePerMedium = types.MapNull(types.Int64Type)
 	} else {
-		account.ParentName = types.StringValue(a.ParentName)
+		elements := make(map[string]attr.Value, len(limits.DiskSpacePerMedium))
+		for medium, limit := range limits.DiskSpacePerMedium {
+			elements[medium] = types.Int64Value(limit)
+		}
+		diskSpacePerMedium, diags = types.MapValueFrom(ctx, types.Int64Type, elements)
+		if diags.HasError() {
+			return types.ObjectNull(attrTypes), diags
+		}
 	}
 
-	return account
+	accountResourceLimitsObj, diags := types.ObjectValueFrom(ctx, attrTypes, AccountResourceLimitsModel{
+		NodeCount:          types.Int64Value(limits.NodeCount),
+		ChunkCount:         types.Int64Value(limits.ChunkCount),
+		TabletCount:        types.Int64Value(limits.TabletCount),
+		TabletStaticMemory: types.Int64Value(limits.TabletStaticMemory),
+		DiskSpacePerMedium: diskSpacePerMedium,
+	})
+
+	return accountResourceLimitsObj, diags
 }
 
-func toYTsaurusAccount(a AccountModel) (ytsaurus.Account, diag.Diagnostics) {
-	acl, diags := acl.ToYTsaurusACL(a.ACL)
-	return ytsaurus.Account{
-		Name:           a.Name.ValueString(),
+// flattenAccount performs YT to Terraform conversion for Account resources.
+// Direction: YT -> Terraform
+func flattenAccount(ctx context.Context, account ytsaurus.Account) (AccountModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	resourceLimits, diags := flattenAccountResourceLimits(ctx, account.ResourceLimits)
+	acl, diags := acl.FlattenACL(ctx, account.ACL)
+
+	accountModel := AccountModel{
+		ID:             types.StringValue(account.ID),
+		Name:           types.StringValue(account.Name),
 		ACL:            acl,
-		ResourceLimits: toYTsaurusAccountResourceLimits(*a.ResourceLimits),
-		InheritACL:     a.InheritACL.ValueBool(),
-		ParentName:     a.ParentName.ValueString(),
+		ResourceLimits: resourceLimits,
+		InheritACL:     types.BoolValue(account.InheritACL),
+	}
+	if account.ParentName == "root" {
+		accountModel.ParentName = types.StringNull()
+	} else {
+		accountModel.ParentName = types.StringValue(account.ParentName)
+	}
+
+	return accountModel, diags
+}
+
+// expandAccountResourceLimits performs Terraform to YT conversion for AccountResourceLimits resources.
+// Direction: Terraform -> YT
+func ExpandAccountResourceLimits(ctx context.Context, obj types.Object) (ytsaurus.AccountResourceLimits, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	var limits ytsaurus.AccountResourceLimits
+
+	if obj.IsNull() {
+		diags.AddError(
+			"AccountResourceLimits is Null",
+			"",
+		)
+		return ytsaurus.AccountResourceLimits{}, diags
+	}
+
+	var limitsModel AccountResourceLimitsModel
+	diags = obj.As(ctx, &limitsModel, basetypes.ObjectAsOptions{})
+	if diags.HasError() {
+		return ytsaurus.AccountResourceLimits{}, diags
+	}
+
+	limits.NodeCount = limitsModel.NodeCount.ValueInt64()
+	limits.ChunkCount = limitsModel.ChunkCount.ValueInt64()
+	limits.TabletCount = limitsModel.TabletCount.ValueInt64()
+	limits.TabletStaticMemory = limitsModel.TabletStaticMemory.ValueInt64()
+	if !limitsModel.DiskSpacePerMedium.IsNull() {
+		elements := make(map[string]types.Int64)
+		diags := limitsModel.DiskSpacePerMedium.ElementsAs(ctx, &elements, false)
+		if diags.HasError() {
+			return ytsaurus.AccountResourceLimits{}, diags
+		}
+
+		limits.DiskSpacePerMedium = make(map[string]int64, len(elements))
+		for medium, val := range elements {
+			limits.DiskSpacePerMedium[medium] = val.ValueInt64()
+		}
+	}
+
+	return limits, diags
+}
+
+// expandAccount performs Terraform to YT conversion for Account resources.
+// Direction: Terraform -> YT
+func expandAccount(ctx context.Context, accountModel AccountModel) (ytsaurus.Account, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if accountModel.ID.IsNull() {
+		diags.AddError(
+			"accountModel is Null",
+			"",
+		)
+		return ytsaurus.Account{}, diags
+	}
+
+	acl, diags := acl.ExpandACL(ctx, accountModel.ACL)
+	resourceLimits, diags := ExpandAccountResourceLimits(ctx, accountModel.ResourceLimits)
+	return ytsaurus.Account{
+		Name:           accountModel.Name.ValueString(),
+		ACL:            acl,
+		ResourceLimits: resourceLimits,
+		InheritACL:     accountModel.InheritACL.ValueBool(),
+		ParentName:     accountModel.ParentName.ValueString(),
 	}, diags
 }
 
@@ -221,7 +291,7 @@ func (r *accountResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	ytAccount, diags := toYTsaurusAccount(plan)
+	ytAccount, diags := expandAccount(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -278,7 +348,12 @@ func (r *accountResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	state := toAccountModel(ytAccount)
+	state, diags := flattenAccount(ctx, ytAccount)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -292,7 +367,7 @@ func (r *accountResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	ytAccount, diags := toYTsaurusAccount(plan)
+	ytAccount, diags := expandAccount(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -338,7 +413,7 @@ func (r *accountResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	ytAccount, diags := toYTsaurusAccount(state)
+	ytAccount, diags := expandAccount(ctx, state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

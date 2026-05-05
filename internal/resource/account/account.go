@@ -300,15 +300,19 @@ func (r *accountResource) Create(ctx context.Context, req resource.CreateRequest
 	createOptions := &yt.CreateObjectOptions{
 		Attributes: map[string]interface{}{
 			"name":               ytAccount.Name,
-			"acl":                ytAccount.ACL,
-			"inherit_acl":        ytAccount.InheritACL,
 			"resource_limits":    ytAccount.ResourceLimits,
 			"terraform_resource": true,
 		},
 	}
 
-	if len(ytAccount.ParentName) > 0 {
+	if !plan.ACL.IsNull() {
+		createOptions.Attributes["acl"] = ytAccount.ACL
+	}
+	if !plan.ParentName.IsNull() {
 		createOptions.Attributes["parent_name"] = ytAccount.ParentName
+	}
+	if !plan.InheritACL.ValueBool() {
+		createOptions.Attributes["inherit_acl"] = ytAccount.InheritACL
 	}
 
 	id, err := r.client.CreateObject(ctx, yt.NodeAccount, createOptions)
@@ -361,6 +365,9 @@ func (r *accountResource) Update(ctx context.Context, req resource.UpdateRequest
 	var plan AccountModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 
+	var state AccountModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+
 	var objectID string
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &objectID)...)
 	if resp.Diagnostics.HasError() {
@@ -376,12 +383,17 @@ func (r *accountResource) Update(ctx context.Context, req resource.UpdateRequest
 	p := ypath.Path(fmt.Sprintf("#%s", objectID))
 	attributeUpdates := map[string]interface{}{
 		"name":            ytAccount.Name,
-		"acl":             ytAccount.ACL,
 		"resource_limits": ytAccount.ResourceLimits,
-		"inherit_acl":     ytAccount.InheritACL,
 	}
 
-	if len(ytAccount.ParentName) > 0 {
+	if !plan.ACL.Equal(state.ACL) {
+		attributeUpdates["acl"] = ytAccount.ACL
+	}
+	if !plan.InheritACL.Equal(state.InheritACL) {
+		attributeUpdates["inherit_acl"] = ytAccount.InheritACL
+	}
+
+	if !plan.ParentName.IsNull() {
 		attributeUpdates["parent_name"] = ytAccount.ParentName
 	} else {
 		attributeUpdates["parent_name"] = "root"

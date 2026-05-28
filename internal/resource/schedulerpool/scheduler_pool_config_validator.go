@@ -22,7 +22,7 @@ func (v schedulerPoolResourceConfigValidator) MarkdownDescription(_ context.Cont
 func (v schedulerPoolResourceConfigValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var config SchedulerPoolModel
 
-	ytSchedulerPool, diags := toYTsaurusSchedulerPool(config)
+	ytSchedulerPool, diags := expandSchedulerPool(ctx, config)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

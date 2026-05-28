@@ -37,28 +37,47 @@ type MapNodeModel struct {
 	Path       types.String `tfsdk:"path"`
 	Account    types.String `tfsdk:"account"`
 	InheritACL types.Bool   `tfsdk:"inherit_acl"`
-	ACL        acl.ACLModel `tfsdk:"acl"`
+	ACL        types.List   `tfsdk:"acl"`
 	Opaque     types.Bool   `tfsdk:"opaque"`
 }
 
-func toMapNodeModel(m ytsaurus.MapNode) MapNodeModel {
+// flattenMapNode performs YT to Terraform conversion for MapNode resources.
+// Direction: YT -> Terraform
+func flattenMapNode(ctx context.Context, mapNode ytsaurus.MapNode) (MapNodeModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	acl, diags := acl.FlattenACL(ctx, mapNode.ACL)
+
 	return MapNodeModel{
-		ID:         types.StringValue(m.ID),
-		Path:       types.StringValue(m.Path),
-		Account:    types.StringValue(m.Account),
-		InheritACL: types.BoolValue(m.InheritACL),
-		Opaque:     types.BoolValue(m.Opaque),
-		ACL:        acl.ToACLModel(m.ACL),
-	}
+		ID:         types.StringValue(mapNode.ID),
+		Path:       types.StringValue(mapNode.Path),
+		Account:    types.StringValue(mapNode.Account),
+		InheritACL: types.BoolValue(mapNode.InheritACL),
+		Opaque:     types.BoolValue(mapNode.Opaque),
+		ACL:        acl,
+	}, diags
 }
 
-func toYTsaurusMapNode(m MapNodeModel) (ytsaurus.MapNode, diag.Diagnostics) {
-	acl, diags := acl.ToYTsaurusACL(m.ACL)
+// func toMapNodeModel(m ytsaurus.MapNode) MapNodeModel {
+// 	return MapNodeModel{
+// 		ID:         types.StringValue(m.ID),
+// 		Path:       types.StringValue(m.Path),
+// 		Account:    types.StringValue(m.Account),
+// 		InheritACL: types.BoolValue(m.InheritACL),
+// 		Opaque:     types.BoolValue(m.Opaque),
+// 		ACL:        acl.ToACLModel(m.ACL),
+// 	}
+// }
+
+// expandAccount performs Terraform to YT conversion for MapNode resources.
+// Direction: Terraform -> YT
+func expandMapNode(ctx context.Context, mapNodeModel MapNodeModel) (ytsaurus.MapNode, diag.Diagnostics) {
+	acl, diags := acl.ExpandACL(ctx, mapNodeModel.ACL)
 	return ytsaurus.MapNode{
-		Path:       m.Path.ValueString(),
-		Account:    m.Account.ValueString(),
-		InheritACL: m.InheritACL.ValueBool(),
-		Opaque:     m.Opaque.ValueBool(),
+		Path:       mapNodeModel.Path.ValueString(),
+		Account:    mapNodeModel.Account.ValueString(),
+		InheritACL: mapNodeModel.InheritACL.ValueBool(),
+		Opaque:     mapNodeModel.Opaque.ValueBool(),
 		ACL:        acl,
 	}, diags
 }
@@ -134,7 +153,7 @@ func (r *mapNodeResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	ytMapNode, diags := toYTsaurusMapNode(plan)
+	ytMapNode, diags := expandMapNode(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -142,13 +161,18 @@ func (r *mapNodeResource) Create(ctx context.Context, req resource.CreateRequest
 
 	createOptions := &yt.CreateNodeOptions{
 		Attributes: map[string]interface{}{
-			"acl":                ytMapNode.ACL,
-			"inherit_acl":        ytMapNode.InheritACL,
 			"opaque":             ytMapNode.Opaque,
 			"terraform_resource": true,
 		},
 	}
-	if ytMapNode.Account != "" {
+
+	if !plan.ACL.IsNull() {
+		createOptions.Attributes["acl"] = ytMapNode.ACL
+	}
+	if !plan.InheritACL.ValueBool() {
+		createOptions.Attributes["inherit_acl"] = ytMapNode.InheritACL
+	}
+	if !plan.Account.IsNull() && !plan.Account.IsUnknown() {
 		createOptions.Attributes["account"] = ytMapNode.Account
 	}
 
@@ -180,7 +204,13 @@ func (r *mapNodeResource) Create(ctx context.Context, req resource.CreateRequest
 		}
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, toMapNodeModel(ytMapNode))...)
+	state, diags := flattenMapNode(ctx, ytMapNode)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *mapNodeResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -216,7 +246,12 @@ func (r *mapNodeResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	state := toMapNodeModel(mapNode)
+	state, diags := flattenMapNode(ctx, mapNode)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -238,7 +273,7 @@ func (r *mapNodeResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	ytMapNode, diags := toYTsaurusMapNode(plan)
+	ytMapNode, diags := expandMapNode(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -246,11 +281,17 @@ func (r *mapNodeResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	p := ypath.Path(fmt.Sprintf("#%s", state.ID.ValueString()))
 	attributeUpdates := map[string]interface{}{
-		"account":     ytMapNode.Account,
-		"acl":         ytMapNode.ACL,
-		"inherit_acl": ytMapNode.InheritACL,
-		"opaque":      ytMapNode.Opaque,
+		"account": ytMapNode.Account,
+		"opaque":  ytMapNode.Opaque,
 	}
+
+	if !plan.ACL.Equal(state.ACL) {
+		attributeUpdates["acl"] = ytMapNode.ACL
+	}
+	if !plan.InheritACL.Equal(state.InheritACL) {
+		attributeUpdates["inherit_acl"] = ytMapNode.InheritACL
+	}
+
 	for k, v := range attributeUpdates {
 		if err := r.client.SetNode(ctx, p.Attr(k), v, nil); err != nil {
 			resp.Diagnostics.AddError(

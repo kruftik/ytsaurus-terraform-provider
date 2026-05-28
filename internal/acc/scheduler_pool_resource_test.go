@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"go.ytsaurus.tech/yt/go/yt"
 
@@ -62,46 +64,105 @@ func TestSchedulerPoolResourceMisconfigurations(t *testing.T) {
 		MaxOperationCount:        types.Int64Value(testMaxOperationCount - 1),
 	}
 
+	resourcesAttrTypes := map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	}
+
+	emptyResourceLimits, _ := types.ObjectValueFrom(ctx, resourcesAttrTypes, schedulerpool.SchedulerPoolResourcesModel{})
+
 	configResourceLimitsNotEmpty := schedulerpool.SchedulerPoolModel{
 		Name:           types.StringValue(testSchedulerPoolName),
 		PoolTree:       types.StringValue(testPoolTree),
-		ResourceLimits: &schedulerpool.SchedulerPoolResourcesModel{},
+		ResourceLimits: emptyResourceLimits,
 	}
+
+	emptyStrongGuaranteeResources, _ := types.ObjectValueFrom(ctx, resourcesAttrTypes, schedulerpool.SchedulerPoolResourcesModel{})
 
 	configStrongGuaranteeResourcesNotEmpty := schedulerpool.SchedulerPoolModel{
 		Name:                     types.StringValue(testSchedulerPoolName),
 		PoolTree:                 types.StringValue(testPoolTree),
-		StrongGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{},
+		StrongGuaranteeResources: emptyStrongGuaranteeResources,
 	}
 
-	configIntegralGuaranteesGuaranteeTypeOneOf := schedulerpool.SchedulerPoolModel{
-		Name:     types.StringValue(testSchedulerPoolName),
-		PoolTree: types.StringValue(testPoolTree),
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			GuaranteeType: types.StringValue("fake"),
+	integralGuarantees, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
 		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType:           types.StringValue("fake"),
+		ResourceFlow:            types.ObjectNull(resourcesAttrTypes),
+		BurstGuaranteeResources: types.ObjectNull(resourcesAttrTypes),
+	})
+
+	configIntegralGuaranteesGuaranteeTypeOneOf := schedulerpool.SchedulerPoolModel{
+		Name:               types.StringValue(testSchedulerPoolName),
+		PoolTree:           types.StringValue(testPoolTree),
+		IntegralGuarantees: integralGuarantees,
 	}
+
+	emptyIntegralGuarantees, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType:           types.StringNull(),
+		ResourceFlow:            types.ObjectNull(resourcesAttrTypes),
+		BurstGuaranteeResources: types.ObjectNull(resourcesAttrTypes),
+	})
 
 	configIntegralGuaranteesNotEmpty := schedulerpool.SchedulerPoolModel{
 		Name:               types.StringValue(testSchedulerPoolName),
 		PoolTree:           types.StringValue(testPoolTree),
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{},
+		IntegralGuarantees: emptyIntegralGuarantees,
 	}
+
+	integralGuaranteesWithResourceFlow, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType:           types.StringNull(),
+		ResourceFlow:            emptyResourceLimits,
+		BurstGuaranteeResources: types.ObjectNull(resourcesAttrTypes),
+	})
 
 	configIntegralGuaranteesResourceFlowNotEmpty := schedulerpool.SchedulerPoolModel{
-		Name:     types.StringValue(testSchedulerPoolName),
-		PoolTree: types.StringValue(testPoolTree),
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			ResourceFlow: &schedulerpool.SchedulerPoolResourcesModel{},
-		},
+		Name:               types.StringValue(testSchedulerPoolName),
+		PoolTree:           types.StringValue(testPoolTree),
+		IntegralGuarantees: integralGuaranteesWithResourceFlow,
 	}
 
-	configIntegralGuaranteesBurstGuaranteeResourcesNotEmpty := schedulerpool.SchedulerPoolModel{
-		Name:     types.StringValue(testSchedulerPoolName),
-		PoolTree: types.StringValue(testPoolTree),
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			BurstGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{},
+	integralGuaranteesWithBurstGuaranteeResources, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
 		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: resourcesAttrTypes,
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType:           types.StringNull(),
+		ResourceFlow:            types.ObjectNull(resourcesAttrTypes),
+		BurstGuaranteeResources: emptyResourceLimits,
+	})
+
+	configIntegralGuaranteesBurstGuaranteeResourcesNotEmpty := schedulerpool.SchedulerPoolModel{
+		Name:               types.StringValue(testSchedulerPoolName),
+		PoolTree:           types.StringValue(testPoolTree),
+		IntegralGuarantees: integralGuaranteesWithBurstGuaranteeResources,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -185,75 +246,100 @@ func TestSchedulerPoolResourceCreateAndUpdate(t *testing.T) {
 			InheritanceMode: "object_and_descendants",
 		},
 	}
+	testACLModel, _ := acl.FlattenACL(ctx, testACL)
 
 	configCreateWithMinimalOptions := schedulerpool.SchedulerPoolModel{
 		Name:     types.StringValue(testSchedulerPoolName),
 		PoolTree: types.StringValue(testPoolTree),
 	}
 
+	resourceLimits, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	}, schedulerpool.SchedulerPoolResourcesModel{
+		CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
+		Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
+	})
+
+	integralGuarantees, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType: types.StringValue(testGuaranteeTypeBurst),
+		ResourceFlow: types.ObjectNull(map[string]attr.Type{
+			"cpu":    types.Int64Type,
+			"memory": types.Int64Type,
+		}),
+		BurstGuaranteeResources: resourceLimits,
+	})
+
+	integralGuaranteesResourceFlow, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType: types.StringValue(testGuaranteeTypeRelaxed),
+		ResourceFlow:  resourceLimits,
+		BurstGuaranteeResources: types.ObjectNull(map[string]attr.Type{
+			"cpu":    types.Int64Type,
+			"memory": types.Int64Type,
+		}),
+	})
+
 	configUpdateAllAttributes := schedulerpool.SchedulerPoolModel{
 		Name:                      types.StringValue(testSchedulerPoolName),
 		PoolTree:                  types.StringValue(testPoolTree),
-		ACL:                       acl.ToACLModel(testACL),
+		ACL:                       testACLModel,
 		MaxRunningOperationCount:  types.Int64Value(testMaxRunningOperationCount),
 		MaxOperationCount:         types.Int64Value(testMaxOperationCount),
 		ForbidImmediateOperations: types.BoolValue(testForbidImmediateOperations),
-		ResourceLimits: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		StrongGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
+		ResourceLimits:            resourceLimits,
+		StrongGuaranteeResources:  resourceLimits,
 	}
 
 	configIntegralGuaranteesBurst := schedulerpool.SchedulerPoolModel{
 		Name:                      types.StringValue(testSchedulerPoolName),
 		PoolTree:                  types.StringValue(testPoolTree),
-		ACL:                       acl.ToACLModel(testACL),
+		ACL:                       testACLModel,
 		MaxRunningOperationCount:  types.Int64Value(testMaxRunningOperationCount),
 		MaxOperationCount:         types.Int64Value(testMaxOperationCount),
 		ForbidImmediateOperations: types.BoolValue(testForbidImmediateOperations),
-		ResourceLimits: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		StrongGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			GuaranteeType: types.StringValue(testGuaranteeTypeBurst),
-			BurstGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-				CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-				Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-			},
-		},
+		ResourceLimits:            resourceLimits,
+		StrongGuaranteeResources:  resourceLimits,
+		IntegralGuarantees:        integralGuarantees,
 	}
 
 	configIntegralGuaranteesRelaxed := schedulerpool.SchedulerPoolModel{
 		Name:                      types.StringValue(testSchedulerPoolName),
 		PoolTree:                  types.StringValue(testPoolTree),
-		ACL:                       acl.ToACLModel(testACL),
+		ACL:                       testACLModel,
 		MaxRunningOperationCount:  types.Int64Value(testMaxRunningOperationCount),
 		MaxOperationCount:         types.Int64Value(testMaxOperationCount),
 		ForbidImmediateOperations: types.BoolValue(testForbidImmediateOperations),
-		ResourceLimits: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		StrongGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			GuaranteeType: types.StringValue(testGuaranteeTypeRelaxed),
-			ResourceFlow: &schedulerpool.SchedulerPoolResourcesModel{
-				CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-				Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-			},
-		},
+		ResourceLimits:            resourceLimits,
+		StrongGuaranteeResources:  resourceLimits,
+		IntegralGuarantees:        integralGuaranteesResourceFlow,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -338,29 +424,49 @@ func TestSchedulerPoolResourceCreateWithAllAttributesIntegralGuaranteesBurst(t *
 			InheritanceMode: "object_and_descendants",
 		},
 	}
+	testACLModel, _ := acl.FlattenACL(ctx, testACL)
+
+	resourceLimits, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	}, schedulerpool.SchedulerPoolResourcesModel{
+		CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
+		Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
+	})
+
+	integralGuarantees, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType: types.StringValue(testGuaranteeTypeBurst),
+		ResourceFlow: types.ObjectNull(map[string]attr.Type{
+			"cpu":    types.Int64Type,
+			"memory": types.Int64Type,
+		}),
+		BurstGuaranteeResources: resourceLimits,
+	})
 
 	configIntegralGuaranteesBurst := schedulerpool.SchedulerPoolModel{
 		Name:                      types.StringValue(testSchedulerPoolName),
 		PoolTree:                  types.StringValue(testPoolTree),
-		ACL:                       acl.ToACLModel(testACL),
+		ACL:                       testACLModel,
 		MaxRunningOperationCount:  types.Int64Value(testMaxRunningOperationCount),
 		MaxOperationCount:         types.Int64Value(testMaxOperationCount),
 		ForbidImmediateOperations: types.BoolValue(testForbidImmediateOperations),
-		ResourceLimits: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		StrongGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			GuaranteeType: types.StringValue(testGuaranteeTypeBurst),
-			BurstGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-				CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-				Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-			},
-		},
+		ResourceLimits:            resourceLimits,
+		StrongGuaranteeResources:  resourceLimits,
+		IntegralGuarantees:        integralGuarantees,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -408,29 +514,49 @@ func TestSchedulerPoolResourceCreateWithAllAttributesIntegralGuaranteesRelaxed(t
 			InheritanceMode: "object_and_descendants",
 		},
 	}
+	testACLModel, _ := acl.FlattenACL(ctx, testACL)
+
+	resourceLimits, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	}, schedulerpool.SchedulerPoolResourcesModel{
+		CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
+		Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
+	})
+
+	integralGuaranteesResourceFlow, _ := types.ObjectValueFrom(ctx, map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+	}, schedulerpool.SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType: types.StringValue(testGuaranteeTypeRelaxed),
+		ResourceFlow:  resourceLimits,
+		BurstGuaranteeResources: types.ObjectNull(map[string]attr.Type{
+			"cpu":    types.Int64Type,
+			"memory": types.Int64Type,
+		}),
+	})
 
 	configIntegralGuaranteesRelaxed := schedulerpool.SchedulerPoolModel{
 		Name:                      types.StringValue(testSchedulerPoolName),
 		PoolTree:                  types.StringValue(testPoolTree),
-		ACL:                       acl.ToACLModel(testACL),
+		ACL:                       testACLModel,
 		MaxRunningOperationCount:  types.Int64Value(testMaxRunningOperationCount),
 		MaxOperationCount:         types.Int64Value(testMaxOperationCount),
 		ForbidImmediateOperations: types.BoolValue(testForbidImmediateOperations),
-		ResourceLimits: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		StrongGuaranteeResources: &schedulerpool.SchedulerPoolResourcesModel{
-			CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-			Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-		},
-		IntegralGuarantees: &schedulerpool.SchedulerPoolIntegralGuaranteesModel{
-			GuaranteeType: types.StringValue(testGuaranteeTypeRelaxed),
-			ResourceFlow: &schedulerpool.SchedulerPoolResourcesModel{
-				CPU:    types.Int64Value(testSchedulerPoolResourcesModelCPU),
-				Memory: types.Int64Value(testSchedulerPoolResourcesModelMemory),
-			},
-		},
+		ResourceLimits:            resourceLimits,
+		StrongGuaranteeResources:  resourceLimits,
+		IntegralGuarantees:        integralGuaranteesResourceFlow,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -590,81 +716,96 @@ func accResourceYtsaurusSchedulerPoolConfig(id string, m schedulerpool.Scheduler
 		forbid_immediate_operations = %t`, m.ForbidImmediateOperations.ValueBool())
 	}
 
-	if m.ResourceLimits != nil {
+	if !m.ResourceLimits.IsNull() {
 		config += `
 		resource_limits = {`
 
-		if !m.ResourceLimits.CPU.IsNull() {
+		var resourcesModel schedulerpool.SchedulerPoolResourcesModel
+		_ = m.ResourceLimits.As(ctx, &resourcesModel, basetypes.ObjectAsOptions{})
+
+		if !resourcesModel.CPU.IsNull() {
 			config += fmt.Sprintf(`
-			cpu = %d`, m.ResourceLimits.CPU.ValueInt64())
+			cpu = %d`, resourcesModel.CPU.ValueInt64())
 		}
 
-		if !m.ResourceLimits.Memory.IsNull() {
+		if !resourcesModel.Memory.IsNull() {
 			config += fmt.Sprintf(`
-			memory = %d`, m.ResourceLimits.Memory.ValueInt64())
+			memory = %d`, resourcesModel.Memory.ValueInt64())
 		}
 
 		config += `
 		}`
 	}
 
-	if m.StrongGuaranteeResources != nil {
+	if !m.StrongGuaranteeResources.IsNull() {
 		config += `
 		strong_guarantee_resources = {`
 
-		if !m.StrongGuaranteeResources.CPU.IsNull() {
+		var resourcesModel schedulerpool.SchedulerPoolResourcesModel
+		_ = m.StrongGuaranteeResources.As(ctx, &resourcesModel, basetypes.ObjectAsOptions{})
+
+		if !resourcesModel.CPU.IsNull() {
 			config += fmt.Sprintf(`
-			cpu = %d`, m.StrongGuaranteeResources.CPU.ValueInt64())
+			cpu = %d`, resourcesModel.CPU.ValueInt64())
 		}
 
-		if !m.StrongGuaranteeResources.Memory.IsNull() {
+		if !resourcesModel.Memory.IsNull() {
 			config += fmt.Sprintf(`
-			memory = %d`, m.StrongGuaranteeResources.Memory.ValueInt64())
+			memory = %d`, resourcesModel.Memory.ValueInt64())
 		}
 
 		config += `
 		}`
 	}
 
-	if m.IntegralGuarantees != nil {
+	if !m.IntegralGuarantees.IsNull() {
 		config += `
 		integral_guarantees = {`
 
-		if !m.IntegralGuarantees.GuaranteeType.IsNull() {
+		var integralGuaranteesModel schedulerpool.SchedulerPoolIntegralGuaranteesModel
+		_ = m.IntegralGuarantees.As(ctx, &integralGuaranteesModel, basetypes.ObjectAsOptions{})
+
+		if !integralGuaranteesModel.GuaranteeType.IsNull() {
 			config += fmt.Sprintf(`
-			guarantee_type = %q`, m.IntegralGuarantees.GuaranteeType.ValueString())
+			guarantee_type = %q`, integralGuaranteesModel.GuaranteeType.ValueString())
 		}
 
-		if m.IntegralGuarantees.ResourceFlow != nil {
+		if !integralGuaranteesModel.ResourceFlow.IsNull() {
 			config += `
 			resource_flow = {`
 
-			if !m.IntegralGuarantees.ResourceFlow.CPU.IsNull() {
+			var resourcesModel schedulerpool.SchedulerPoolResourcesModel
+			_ = integralGuaranteesModel.ResourceFlow.As(ctx, &resourcesModel, basetypes.ObjectAsOptions{})
+
+			if !resourcesModel.CPU.IsNull() {
 				config += fmt.Sprintf(`
-				cpu = %d`, m.IntegralGuarantees.ResourceFlow.CPU.ValueInt64())
+				cpu = %d`, resourcesModel.CPU.ValueInt64())
 			}
 
-			if !m.IntegralGuarantees.ResourceFlow.Memory.IsNull() {
+			if !resourcesModel.Memory.IsNull() {
 				config += fmt.Sprintf(`
-				memory = %d`, m.IntegralGuarantees.ResourceFlow.Memory.ValueInt64())
+				memory = %d`, resourcesModel.Memory.ValueInt64())
 			}
 
 			config += `
 			}`
 		}
 
-		if m.IntegralGuarantees.BurstGuaranteeResources != nil {
+		if !integralGuaranteesModel.BurstGuaranteeResources.IsNull() {
 			config += `
 			burst_guarantee_resources = {`
 
-			if !m.IntegralGuarantees.BurstGuaranteeResources.CPU.IsNull() {
+			var resourcesModel schedulerpool.SchedulerPoolResourcesModel
+			_ = integralGuaranteesModel.BurstGuaranteeResources.As(ctx, &resourcesModel, basetypes.ObjectAsOptions{})
+
+			if !resourcesModel.CPU.IsNull() {
 				config += fmt.Sprintf(`
-				cpu = %d`, m.IntegralGuarantees.BurstGuaranteeResources.CPU.ValueInt64())
+				cpu = %d`, resourcesModel.CPU.ValueInt64())
 			}
 
-			if !m.IntegralGuarantees.BurstGuaranteeResources.Memory.IsNull() {
+			if !resourcesModel.Memory.IsNull() {
 				config += fmt.Sprintf(`
-				memory = %d`, m.IntegralGuarantees.BurstGuaranteeResources.Memory.ValueInt64())
+				memory = %d`, resourcesModel.Memory.ValueInt64())
 			}
 
 			config += `
@@ -675,7 +816,7 @@ func accResourceYtsaurusSchedulerPoolConfig(id string, m schedulerpool.Scheduler
 		}`
 	}
 
-	acl, _ := acl.ToYTsaurusACL(m.ACL)
+	acl, _ := acl.ExpandACL(ctx, m.ACL)
 	if len(acl) > 0 {
 		config += accAddACLConfig(acl)
 	}

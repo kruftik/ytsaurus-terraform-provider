@@ -1,6 +1,7 @@
 package acc
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
@@ -14,6 +15,7 @@ import (
 )
 
 func TestMapNodeResourceCreateAndUpdate(t *testing.T) {
+	ctx := context.Background()
 	resourceID := "projecthome"
 	testMapNodePath := "//home/fakeproject"
 	testMapNodeDefaultAccount := "default"
@@ -35,6 +37,7 @@ func TestMapNodeResourceCreateAndUpdate(t *testing.T) {
 			InheritanceMode: "object_and_descendants",
 		},
 	}
+	testACLModel, _ := acl.FlattenACL(ctx, testACL)
 
 	configEmpty := mapnode.MapNodeModel{}
 
@@ -46,7 +49,7 @@ func TestMapNodeResourceCreateAndUpdate(t *testing.T) {
 		Path:       types.StringValue(testMapNodePath),
 		InheritACL: types.BoolValue(inheritAclFalse),
 		Account:    types.StringValue(testMapNodeSysAccount),
-		ACL:        acl.ToACLModel(testACL),
+		ACL:        testACLModel,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -79,6 +82,7 @@ func TestMapNodeResourceCreateAndUpdate(t *testing.T) {
 }
 
 func TestMapNodeResourceCreateWithAllOptions(t *testing.T) {
+	ctx := context.Background()
 	resourceID := "projecthome"
 	testMapNodePath := "//home/fakeproject"
 	testMapNodeSysAccount := "sys"
@@ -98,12 +102,13 @@ func TestMapNodeResourceCreateWithAllOptions(t *testing.T) {
 			InheritanceMode: "object_and_descendants",
 		},
 	}
+	testACLModel, _ := acl.FlattenACL(ctx, testACL)
 
 	configCreate := mapnode.MapNodeModel{
 		Path:       types.StringValue(testMapNodePath),
 		InheritACL: types.BoolValue(inheritAclFalse),
 		Account:    types.StringValue(testMapNodeSysAccount),
-		ACL:        acl.ToACLModel(testACL),
+		ACL:        testACLModel,
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -125,6 +130,7 @@ func TestMapNodeResourceCreateWithAllOptions(t *testing.T) {
 
 // func accResourceYtsaurusMapNodeConfig(resource, id, path, account string, inheritAcl bool, acl []yt.ACE) string {
 func accResourceYtsaurusMapNodeConfig(id string, m mapnode.MapNodeModel) string {
+	ctx := context.Background()
 	config := fmt.Sprintf(`
 		resource "ytsaurus_map_node" %q {`, id)
 
@@ -143,9 +149,9 @@ func accResourceYtsaurusMapNodeConfig(id string, m mapnode.MapNodeModel) string 
 		inherit_acl = %t`, m.InheritACL.ValueBool())
 	}
 
-	acl, _ := acl.ToYTsaurusACL(m.ACL)
-	if len(acl) > 0 {
-		config += accAddACLConfig(acl)
+	ytACL, _ := acl.ExpandACL(ctx, m.ACL)
+	if len(ytACL) > 0 {
+		config += accAddACLConfig(ytACL)
 	}
 
 	config += `

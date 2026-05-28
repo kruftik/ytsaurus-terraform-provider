@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -17,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
 	"go.ytsaurus.tech/yt/go/ypath"
 	"go.ytsaurus.tech/yt/go/yt"
@@ -41,127 +43,25 @@ type SchedulerPoolResourcesModel struct {
 }
 
 type SchedulerPoolIntegralGuaranteesModel struct {
-	GuaranteeType           types.String                 `tfsdk:"guarantee_type"`
-	ResourceFlow            *SchedulerPoolResourcesModel `tfsdk:"resource_flow"`
-	BurstGuaranteeResources *SchedulerPoolResourcesModel `tfsdk:"burst_guarantee_resources"`
+	GuaranteeType           types.String `tfsdk:"guarantee_type"`
+	ResourceFlow            types.Object `tfsdk:"resource_flow"`
+	BurstGuaranteeResources types.Object `tfsdk:"burst_guarantee_resources"`
 }
 
 type SchedulerPoolModel struct {
-	ID                        types.String                          `tfsdk:"id"`
-	Name                      types.String                          `tfsdk:"name"`
-	PoolTree                  types.String                          `tfsdk:"pool_tree"`
-	ACL                       acl.ACLModel                          `tfsdk:"acl"`
-	ParentName                types.String                          `tfsdk:"parent_name"`
-	MaxRunningOperationCount  types.Int64                           `tfsdk:"max_running_operation_count"`
-	MaxOperationCount         types.Int64                           `tfsdk:"max_operation_count"`
-	StrongGuaranteeResources  *SchedulerPoolResourcesModel          `tfsdk:"strong_guarantee_resources"`
-	IntegralGuarantees        *SchedulerPoolIntegralGuaranteesModel `tfsdk:"integral_guarantees"`
-	ResourceLimits            *SchedulerPoolResourcesModel          `tfsdk:"resource_limits"`
-	ForbidImmediateOperations types.Bool                            `tfsdk:"forbid_immediate_operations"`
-	Weight                    types.Float64                         `tfsdk:"weight"`
-	Mode                      types.String                          `tfsdk:"mode"`
-}
-
-func toSchedulerPoolIntegralGuaranteesModel(g *ytsaurus.SchedulerPoolIntegralGuarantees) *SchedulerPoolIntegralGuaranteesModel {
-	if g != nil {
-		return &SchedulerPoolIntegralGuaranteesModel{
-			GuaranteeType:           types.StringPointerValue(g.GuaranteeType),
-			ResourceFlow:            toSchedulerPoolResourcesModel(g.ResourceFlow),
-			BurstGuaranteeResources: toSchedulerPoolResourcesModel(g.BurstGuaranteeResources),
-		}
-	} else {
-		return nil
-	}
-}
-
-func toYTsaurusSchedulerPoolIntegralGuarantees(g *SchedulerPoolIntegralGuaranteesModel) *ytsaurus.SchedulerPoolIntegralGuarantees {
-	if g != nil {
-		return &ytsaurus.SchedulerPoolIntegralGuarantees{
-			GuaranteeType:           g.GuaranteeType.ValueStringPointer(),
-			ResourceFlow:            toYTsaurusSchedulerPoolResources(g.ResourceFlow),
-			BurstGuaranteeResources: toYTsaurusSchedulerPoolResources(g.BurstGuaranteeResources),
-		}
-	} else {
-		return nil
-	}
-}
-
-func toSchedulerPoolResourcesModel(r *ytsaurus.SchedulerPoolResources) *SchedulerPoolResourcesModel {
-	if r != nil {
-		return &SchedulerPoolResourcesModel{
-			CPU:    types.Int64PointerValue(r.CPU),
-			Memory: types.Int64PointerValue(r.Memory),
-		}
-	} else {
-		return nil
-	}
-}
-
-func toYTsaurusSchedulerPoolResources(r *SchedulerPoolResourcesModel) *ytsaurus.SchedulerPoolResources {
-	if r != nil {
-		return &ytsaurus.SchedulerPoolResources{
-			CPU:    r.CPU.ValueInt64Pointer(),
-			Memory: r.Memory.ValueInt64Pointer(),
-		}
-	} else {
-		return nil
-	}
-}
-
-func toSchedulerPoolModel(p ytsaurus.SchedulerPool) SchedulerPoolModel {
-	model := SchedulerPoolModel{
-		ID:                        types.StringValue(p.ID),
-		Name:                      types.StringValue(p.Name),
-		ACL:                       acl.ToACLModel(p.ACL),
-		MaxRunningOperationCount:  types.Int64PointerValue(p.MaxRunningOperationCount),
-		MaxOperationCount:         types.Int64PointerValue(p.MaxOperationCount),
-		IntegralGuarantees:        toSchedulerPoolIntegralGuaranteesModel(p.IntegralGuarantees),
-		StrongGuaranteeResources:  toSchedulerPoolResourcesModel(p.StrongGuaranteeResources),
-		ResourceLimits:            toSchedulerPoolResourcesModel(p.ResourceLimits),
-		Weight:                    types.Float64PointerValue(p.Weight),
-		Mode:                      types.StringPointerValue(p.Mode),
-		ForbidImmediateOperations: types.BoolPointerValue(p.ForbidImmediateOperations),
-	}
-
-	if p.ParentName != nil && strings.HasPrefix(*p.ParentName, "#") {
-		model.ParentName = types.StringNull()
-	} else {
-		model.ParentName = types.StringPointerValue(p.ParentName)
-	}
-
-	if len(p.Path) > 0 {
-		p, ok := strings.CutPrefix(p.Path, "//sys/pool_trees/")
-		if !ok {
-			return model
-		}
-
-		poolTree, _, ok := strings.Cut(p, "/")
-		if !ok {
-			return model
-		}
-		model.PoolTree = types.StringValue(poolTree)
-	}
-
-	return model
-}
-
-func toYTsaurusSchedulerPool(p SchedulerPoolModel) (ytsaurus.SchedulerPool, diag.Diagnostics) {
-	acl, diags := acl.ToYTsaurusACL(p.ACL)
-	return ytsaurus.SchedulerPool{
-		ID:                        p.ID.ValueString(),
-		Name:                      p.Name.ValueString(),
-		ACL:                       acl,
-		ParentName:                p.ParentName.ValueStringPointer(),
-		MaxRunningOperationCount:  p.MaxRunningOperationCount.ValueInt64Pointer(),
-		MaxOperationCount:         p.MaxOperationCount.ValueInt64Pointer(),
-		IntegralGuarantees:        toYTsaurusSchedulerPoolIntegralGuarantees(p.IntegralGuarantees),
-		StrongGuaranteeResources:  toYTsaurusSchedulerPoolResources(p.StrongGuaranteeResources),
-		ResourceLimits:            toYTsaurusSchedulerPoolResources(p.ResourceLimits),
-		Weight:                    p.Weight.ValueFloat64Pointer(),
-		Mode:                      p.Mode.ValueStringPointer(),
-		ForbidImmediateOperations: p.ForbidImmediateOperations.ValueBoolPointer(),
-		Path:                      fmt.Sprintf("//sys/pool_trees/%s/%s", p.PoolTree.ValueString(), p.Name.ValueString()),
-	}, diags
+	ID                        types.String  `tfsdk:"id"`
+	Name                      types.String  `tfsdk:"name"`
+	PoolTree                  types.String  `tfsdk:"pool_tree"`
+	ACL                       types.List    `tfsdk:"acl"`
+	ParentName                types.String  `tfsdk:"parent_name"`
+	MaxRunningOperationCount  types.Int64   `tfsdk:"max_running_operation_count"`
+	MaxOperationCount         types.Int64   `tfsdk:"max_operation_count"`
+	StrongGuaranteeResources  types.Object  `tfsdk:"strong_guarantee_resources"`
+	IntegralGuarantees        types.Object  `tfsdk:"integral_guarantees"`
+	ResourceLimits            types.Object  `tfsdk:"resource_limits"`
+	ForbidImmediateOperations types.Bool    `tfsdk:"forbid_immediate_operations"`
+	Weight                    types.Float64 `tfsdk:"weight"`
+	Mode                      types.String  `tfsdk:"mode"`
 }
 
 func ytSchedulerPoolResourcesToMap(r *ytsaurus.SchedulerPoolResources) map[string]int64 {
@@ -191,6 +91,335 @@ func ytSchedulerPoolIntegralGuaranteesToMap(g *ytsaurus.SchedulerPoolIntegralGua
 		}
 	}
 	return m
+}
+
+// flattenSchedulerPoolResources performs YT to Terraform conversion for SchedulerPoolResourcesModel.
+// Direction: YT -> Terraform
+func flattenResources(ctx context.Context, resources ytsaurus.SchedulerPoolResources) (types.Object, diag.Diagnostics) {
+	attrTypes := map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	}
+
+	cpu := types.Int64Null()
+	if resources.CPU != nil {
+		cpu = types.Int64Value(*resources.CPU)
+	}
+
+	memory := types.Int64Null()
+	if resources.Memory != nil {
+		memory = types.Int64Value(*resources.Memory)
+	}
+
+	return types.ObjectValueFrom(ctx, attrTypes, SchedulerPoolResourcesModel{
+		CPU:    cpu,
+		Memory: memory,
+	})
+}
+
+// flattenIntegralGuarantees performs YT to Terraform conversion for SchedulerPoolIntegralGuaranteesModel.
+// Direction: YT -> Terraform
+func flattenIntegralGuarantees(ctx context.Context, integralGuarantees ytsaurus.SchedulerPoolIntegralGuarantees) (types.Object, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	attrTypes := map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+	}
+
+	resourcesAttrTypes := map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	}
+
+	var d diag.Diagnostics
+
+	guaranteeType := types.StringNull()
+	if integralGuarantees.GuaranteeType != nil {
+		guaranteeType = types.StringValue(*integralGuarantees.GuaranteeType)
+	}
+
+	resourceFlow := types.ObjectNull(resourcesAttrTypes)
+	if integralGuarantees.ResourceFlow != nil {
+		resourceFlow, d = flattenResources(ctx, *integralGuarantees.ResourceFlow)
+		diags.Append(d...)
+	}
+
+	burstGuaranteeResources := types.ObjectNull(resourcesAttrTypes)
+	if integralGuarantees.BurstGuaranteeResources != nil {
+		burstGuaranteeResources, d = flattenResources(ctx, *integralGuarantees.BurstGuaranteeResources)
+		diags.Append(d...)
+	}
+
+	if diags.HasError() {
+		return types.ObjectUnknown(attrTypes), diags
+	}
+
+	return types.ObjectValueFrom(ctx, attrTypes, SchedulerPoolIntegralGuaranteesModel{
+		GuaranteeType:           guaranteeType,
+		ResourceFlow:            resourceFlow,
+		BurstGuaranteeResources: burstGuaranteeResources,
+	})
+}
+
+// flattenSchedulerPool performs YT to Terraform conversion for SchedulerPoolModel.
+// Direction: YT -> Terraform
+func flattenSchedulerPool(ctx context.Context, schedulerPool ytsaurus.SchedulerPool) (SchedulerPoolModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	var d diag.Diagnostics
+
+	acl, d := acl.FlattenACL(ctx, schedulerPool.ACL)
+	diags.Append(d...)
+	if diags.HasError() {
+		return SchedulerPoolModel{}, diags
+	}
+
+	strongGuaranteeResourcesObj := types.ObjectNull(map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	})
+	if schedulerPool.StrongGuaranteeResources != nil {
+		strongGuaranteeResourcesObj, d = flattenResources(ctx, *schedulerPool.StrongGuaranteeResources)
+		diags.Append(d...)
+		if diags.HasError() {
+			return SchedulerPoolModel{}, diags
+		}
+	}
+
+	resourceLimitsObj := types.ObjectNull(map[string]attr.Type{
+		"cpu":    types.Int64Type,
+		"memory": types.Int64Type,
+	})
+	if schedulerPool.ResourceLimits != nil {
+		resourceLimitsObj, d = flattenResources(ctx, *schedulerPool.ResourceLimits)
+		diags.Append(d...)
+		if diags.HasError() {
+			return SchedulerPoolModel{}, diags
+		}
+	}
+
+	integralGuarantees := types.ObjectNull(map[string]attr.Type{
+		"guarantee_type": types.StringType,
+		"resource_flow": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+		"burst_guarantee_resources": types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"cpu":    types.Int64Type,
+				"memory": types.Int64Type,
+			},
+		},
+	})
+	if schedulerPool.IntegralGuarantees != nil {
+		integralGuarantees, d = flattenIntegralGuarantees(ctx, *schedulerPool.IntegralGuarantees)
+		diags.Append(d...)
+		if diags.HasError() {
+			return SchedulerPoolModel{}, diags
+		}
+	}
+
+	return SchedulerPoolModel{
+		ID:                        types.StringValue(schedulerPool.ID),
+		Name:                      types.StringValue(schedulerPool.Name),
+		ParentName:                types.StringPointerValue(schedulerPool.ParentName),
+		ACL:                       acl,
+		MaxRunningOperationCount:  types.Int64PointerValue(schedulerPool.MaxRunningOperationCount),
+		MaxOperationCount:         types.Int64PointerValue(schedulerPool.MaxOperationCount),
+		IntegralGuarantees:        integralGuarantees,
+		StrongGuaranteeResources:  strongGuaranteeResourcesObj,
+		ResourceLimits:            resourceLimitsObj,
+		Weight:                    types.Float64PointerValue(schedulerPool.Weight),
+		Mode:                      types.StringPointerValue(schedulerPool.Mode),
+		ForbidImmediateOperations: types.BoolPointerValue(schedulerPool.ForbidImmediateOperations),
+	}, diags
+}
+
+// expandResources performs Terraform to YT conversion for SchedulerPoolResources.
+// Direction: Terraform -> YT
+func expandResources(ctx context.Context, obj types.Object) (*ytsaurus.SchedulerPoolResources, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if obj.IsNull() {
+		return nil, diags
+	}
+
+	var resourcesModel SchedulerPoolResourcesModel
+	d := obj.As(ctx, &resourcesModel, basetypes.ObjectAsOptions{})
+	diags.Append(d...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	resources := ytsaurus.SchedulerPoolResources{
+		CPU:    resourcesModel.CPU.ValueInt64Pointer(),
+		Memory: resourcesModel.Memory.ValueInt64Pointer(),
+	}
+
+	return &resources, diags
+}
+
+func expandResourcesV2(ctx context.Context, obj types.Object) (map[string]int64, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if obj.IsNull() {
+		return nil, diags
+	}
+
+	var model SchedulerPoolResourcesModel
+	diags.Append(obj.As(ctx, &model, basetypes.ObjectAsOptions{})...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	result := map[string]int64{}
+
+	if !model.CPU.IsNull() {
+		result["cpu"] = model.CPU.ValueInt64()
+	}
+	if !model.Memory.IsNull() {
+		result["memory"] = model.Memory.ValueInt64()
+	}
+
+	return result, diags
+}
+
+func expandIntegralGuaranteesV2(ctx context.Context, obj types.Object) (map[string]interface{}, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if obj.IsNull() {
+		return nil, diags
+	}
+
+	var model SchedulerPoolIntegralGuaranteesModel
+	diags.Append(obj.As(ctx, &model, basetypes.ObjectAsOptions{})...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	result := map[string]interface{}{}
+
+	if !model.GuaranteeType.IsNull() {
+		result["guarantee_type"] = model.GuaranteeType.ValueString()
+	}
+
+	if !model.ResourceFlow.IsNull() {
+		resourceFlow, diags := expandResourcesV2(ctx, model.ResourceFlow)
+		if diags.HasError() {
+			return nil, diags
+		}
+		if resourceFlow != nil {
+			result["resource_flow"] = resourceFlow
+		}
+	}
+
+	if !model.BurstGuaranteeResources.IsNull() {
+		burstGuaranteeResources, diags := expandResourcesV2(ctx, model.BurstGuaranteeResources)
+		if diags.HasError() {
+			return nil, diags
+		}
+		if burstGuaranteeResources != nil {
+			result["burst_guarantee_resources"] = burstGuaranteeResources
+		}
+	}
+
+	return result, diags
+}
+
+// expandIntegralGuarantees performs Terraform to YT conversion for SchedulerPoolResources.
+// Direction: Terraform -> YT
+func expandIntegralGuarantees(ctx context.Context, obj types.Object) (*ytsaurus.SchedulerPoolIntegralGuarantees, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	if obj.IsNull() {
+		return nil, diags
+	}
+
+	var integralGuaranteesModel SchedulerPoolIntegralGuaranteesModel
+	d := obj.As(ctx, &integralGuaranteesModel, basetypes.ObjectAsOptions{})
+	diags.Append(d...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	resourceFlow, d := expandResources(ctx, integralGuaranteesModel.ResourceFlow)
+	diags.Append(d...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	burstGuaranteeResources, d := expandResources(ctx, integralGuaranteesModel.BurstGuaranteeResources)
+	diags.Append(d...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	integralGuarantees := ytsaurus.SchedulerPoolIntegralGuarantees{
+		GuaranteeType:           integralGuaranteesModel.GuaranteeType.ValueStringPointer(),
+		ResourceFlow:            resourceFlow,
+		BurstGuaranteeResources: burstGuaranteeResources,
+	}
+
+	return &integralGuarantees, diags
+}
+
+// expandSchedulerPool performs Terraform to YT conversion for SchedulerPool resources.
+// Direction: Terraform -> YT
+func expandSchedulerPool(ctx context.Context, schedulerPoolModel SchedulerPoolModel) (ytsaurus.SchedulerPool, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	acl, d := acl.ExpandACL(ctx, schedulerPoolModel.ACL)
+	diags.Append(d...)
+	if diags.HasError() {
+		return ytsaurus.SchedulerPool{}, diags
+	}
+
+	strongGuaranteeResources, d := expandResources(ctx, schedulerPoolModel.StrongGuaranteeResources)
+	diags.Append(d...)
+	if diags.HasError() {
+		return ytsaurus.SchedulerPool{}, diags
+	}
+
+	resourceLimits, d := expandResources(ctx, schedulerPoolModel.ResourceLimits)
+	diags.Append(d...)
+	if diags.HasError() {
+		return ytsaurus.SchedulerPool{}, diags
+	}
+
+	integralGuarantees, d := expandIntegralGuarantees(ctx, schedulerPoolModel.IntegralGuarantees)
+	diags.Append(d...)
+	if diags.HasError() {
+		return ytsaurus.SchedulerPool{}, diags
+	}
+
+	return ytsaurus.SchedulerPool{
+		ID:                        schedulerPoolModel.ID.ValueString(),
+		Name:                      schedulerPoolModel.Name.ValueString(),
+		ACL:                       acl,
+		ParentName:                schedulerPoolModel.ParentName.ValueStringPointer(),
+		MaxRunningOperationCount:  schedulerPoolModel.MaxRunningOperationCount.ValueInt64Pointer(),
+		MaxOperationCount:         schedulerPoolModel.MaxOperationCount.ValueInt64Pointer(),
+		IntegralGuarantees:        integralGuarantees,
+		StrongGuaranteeResources:  strongGuaranteeResources,
+		ResourceLimits:            resourceLimits,
+		Weight:                    schedulerPoolModel.Weight.ValueFloat64Pointer(),
+		Mode:                      schedulerPoolModel.Mode.ValueStringPointer(),
+		ForbidImmediateOperations: schedulerPoolModel.ForbidImmediateOperations.ValueBoolPointer(),
+		Path:                      fmt.Sprintf("//sys/pool_trees/%s/%s", schedulerPoolModel.PoolTree.ValueString(), schedulerPoolModel.Name.ValueString()),
+	}, diags
 }
 
 var (
@@ -359,63 +588,73 @@ func (r *schedulerPoolResource) Configure(_ context.Context, req resource.Config
 	r.client = req.ProviderData.(yt.Client)
 }
 
-func ppanic(v interface{}) {
-	panic(fmt.Sprintf("%v", v))
-}
-
 func (r *schedulerPoolResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan SchedulerPoolModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
 
-	ytSchedulerPool, diags := toYTsaurusSchedulerPool(plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	createOptions := &yt.CreateObjectOptions{
 		Attributes: map[string]interface{}{
-			"name":               ytSchedulerPool.Name,
-			"acl":                ytSchedulerPool.ACL,
+			"name":               plan.Name.ValueString(),
 			"pool_tree":          plan.PoolTree.ValueString(),
 			"terraform_resource": true,
 		},
 	}
 
-	if ytSchedulerPool.ParentName != nil {
-		createOptions.Attributes["parent_name"] = *ytSchedulerPool.ParentName
+	if !plan.ACL.IsNull() {
+		ytACL, diags := acl.ExpandACL(ctx, plan.ACL)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		createOptions.Attributes["acl"] = ytACL
 	}
-	if ytSchedulerPool.MaxRunningOperationCount != nil {
-		createOptions.Attributes["max_running_operation_count"] = *ytSchedulerPool.MaxRunningOperationCount
+	if !plan.ParentName.IsNull() {
+		createOptions.Attributes["parent_name"] = plan.ParentName.ValueString()
 	}
-	if ytSchedulerPool.MaxOperationCount != nil {
-		createOptions.Attributes["max_operation_count"] = *ytSchedulerPool.MaxOperationCount
+	if !plan.MaxOperationCount.IsNull() {
+		createOptions.Attributes["max_operation_count"] = plan.MaxOperationCount.ValueInt64()
 	}
-	if ytSchedulerPool.Weight != nil {
-		createOptions.Attributes["weight"] = *ytSchedulerPool.Weight
+	if !plan.MaxRunningOperationCount.IsNull() {
+		createOptions.Attributes["max_running_operation_count"] = plan.MaxRunningOperationCount.ValueInt64()
 	}
-	if ytSchedulerPool.Mode != nil {
-		createOptions.Attributes["mode"] = *ytSchedulerPool.Mode
+	if !plan.Weight.IsNull() {
+		createOptions.Attributes["weight"] = plan.Weight.ValueFloat64()
 	}
-	if ytSchedulerPool.ForbidImmediateOperations != nil {
-		createOptions.Attributes["forbid_immediate_operations"] = *ytSchedulerPool.ForbidImmediateOperations
+	if !plan.Mode.IsNull() {
+		createOptions.Attributes["mode"] = plan.Mode.ValueString()
+	}
+	if !plan.ForbidImmediateOperations.IsNull() {
+		createOptions.Attributes["forbid_immediate_operations"] = plan.ForbidImmediateOperations.ValueBool()
 	}
 
-	resourceLimits := ytSchedulerPoolResourcesToMap(ytSchedulerPool.ResourceLimits)
-	if len(resourceLimits) > 0 {
+	resourceLimits, diags := expandResourcesV2(ctx, plan.ResourceLimits)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if resourceLimits != nil {
 		createOptions.Attributes["resource_limits"] = resourceLimits
 	}
 
-	strongGuaranteeResources := ytSchedulerPoolResourcesToMap(ytSchedulerPool.StrongGuaranteeResources)
-	if len(strongGuaranteeResources) > 0 {
+	strongGuaranteeResources, diags := expandResourcesV2(ctx, plan.StrongGuaranteeResources)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if strongGuaranteeResources != nil {
 		createOptions.Attributes["strong_guarantee_resources"] = strongGuaranteeResources
 	}
 
-	integralGuarantees := ytSchedulerPoolIntegralGuaranteesToMap(ytSchedulerPool.IntegralGuarantees)
-	if ytSchedulerPool.IntegralGuarantees != nil {
+	integralGuarantees, diags := expandIntegralGuaranteesV2(ctx, plan.IntegralGuarantees)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if integralGuarantees != nil {
 		createOptions.Attributes["integral_guarantees"] = integralGuarantees
 	}
 
@@ -425,19 +664,15 @@ func (r *schedulerPoolResource) Create(ctx context.Context, req resource.CreateR
 			"Error creating scheduler_pool",
 			fmt.Sprintf(
 				"Could not create scheduler_pool %q, unexpected error: %q",
-				ytSchedulerPool.Name,
+				plan.Name.ValueString(),
 				err.Error(),
 			),
 		)
 		return
 	}
 
-	ytSchedulerPool.ID = id.String()
-
-	state := toSchedulerPoolModel(ytSchedulerPool)
-	state.PoolTree = plan.PoolTree
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
+	plan.ID = types.StringValue(id.String())
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
 func (r *schedulerPoolResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -460,7 +695,24 @@ func (r *schedulerPoolResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 
-	state := toSchedulerPoolModel(ytSchedulerPool)
+	// pools without ParentName store yt cypress id to pool_tree object in @parent_name attribute, like #x-xxxx-xxxx-xxxxxx
+	if ytSchedulerPool.ParentName != nil {
+		if strings.HasPrefix(*ytSchedulerPool.ParentName, "#") {
+			ytSchedulerPool.ParentName = nil
+		}
+	}
+
+	state, d := flattenSchedulerPool(ctx, ytSchedulerPool)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	parts := strings.Split(ytSchedulerPool.Path, "pool_trees/")
+	if len(parts) == 2 {
+		state.PoolTree = types.StringValue(strings.Split(parts[1], "/")[0])
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -474,23 +726,25 @@ func (r *schedulerPoolResource) Update(ctx context.Context, req resource.UpdateR
 		return
 	}
 
-	ytSchedulerPoolPlan, valDiags := toYTsaurusSchedulerPool(plan)
-	resp.Diagnostics.Append(valDiags...)
+	ytSchedulerPoolPlan, d := expandSchedulerPool(ctx, plan)
+	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	ytSchedulerPoolState, valDiags := toYTsaurusSchedulerPool(state)
-	resp.Diagnostics.Append(valDiags...)
+	ytSchedulerPoolState, d := expandSchedulerPool(ctx, state)
+	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	attributeUpdates := map[string]interface{}{
 		"name": ytSchedulerPoolPlan.Name,
-		"acl":  ytSchedulerPoolPlan.ACL,
 	}
 
+	if !plan.ACL.Equal(state.ACL) {
+		attributeUpdates["acl"] = ytSchedulerPoolPlan.ACL
+	}
 	if ytSchedulerPoolPlan.ParentName != nil {
 		attributeUpdates["parent_name"] = *ytSchedulerPoolPlan.ParentName
 	}
@@ -601,7 +855,14 @@ func (r *schedulerPoolResource) Update(ctx context.Context, req resource.UpdateR
 	}
 
 	ytSchedulerPoolPlan.ID = ytSchedulerPoolState.ID
-	resp.Diagnostics.Append(resp.State.Set(ctx, toSchedulerPoolModel(ytSchedulerPoolPlan))...)
+	state, d = flattenSchedulerPool(ctx, ytSchedulerPoolPlan)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	state.PoolTree = plan.PoolTree
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (r *schedulerPoolResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -611,8 +872,8 @@ func (r *schedulerPoolResource) Delete(ctx context.Context, req resource.DeleteR
 		return
 	}
 
-	ytSchedulerPool, diags := toYTsaurusSchedulerPool(state)
-	resp.Diagnostics.Append(diags...)
+	ytSchedulerPool, d := expandSchedulerPool(ctx, state)
+	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

@@ -1,6 +1,7 @@
 package acc
 
 import (
+	"context"
 	"regexp"
 	"terraform-provider-ytsaurus/internal/resource/acl"
 	"terraform-provider-ytsaurus/internal/resource/mapnode"
@@ -12,6 +13,7 @@ import (
 )
 
 func TestACLSchemaMisconfigurations(t *testing.T) {
+	ctx := context.Background()
 	resourceID := "acltest"
 	testMapNodePath := "/tmp/acltest"
 	testMapNodeTmpAccount := "tmp"
@@ -33,19 +35,21 @@ func TestACLSchemaMisconfigurations(t *testing.T) {
 			InheritanceMode: "object_and_descendants",
 		},
 	}
+	badActionACLModel, _ := acl.FlattenACL(ctx, badActionACL)
+	badPermissionsACLModel, _ := acl.FlattenACL(ctx, badPermissionsACL)
 
 	mapNodeConfigBadActionACL := mapnode.MapNodeModel{
 		Path:       types.StringValue(testMapNodePath),
 		Account:    types.StringValue(testMapNodeTmpAccount),
 		InheritACL: types.BoolValue(inheritAcl),
-		ACL:        acl.ToACLModel(badActionACL),
+		ACL:        badActionACLModel,
 	}
 
 	mapNodeConfigBadPermissionsACL := mapnode.MapNodeModel{
 		Path:       types.StringValue(testMapNodePath),
 		Account:    types.StringValue(testMapNodeTmpAccount),
 		InheritACL: types.BoolValue(inheritAcl),
-		ACL:        acl.ToACLModel(badPermissionsACL),
+		ACL:        badPermissionsACLModel,
 	}
 
 	resource.Test(t, resource.TestCase{
